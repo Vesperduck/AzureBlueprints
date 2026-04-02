@@ -104,9 +104,10 @@ export function pipelineToGraph(yaml: string): {
         nodes.push(jobNode);
         edges.push(makeEdge(stageId, jobId));
 
-        // Steps / tasks inside job
+        // Steps / tasks inside job – chained sequentially
         const steps: PipelineStep[] = (job as PipelineJob).steps ?? [];
         let taskY = jobY;
+        let prevTaskId: string = jobId;
 
         for (const step of steps) {
           const taskId = nextId('task');
@@ -120,7 +121,8 @@ export function pipelineToGraph(yaml: string): {
           taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
           taskNode.data.details = { taskName };
           nodes.push(taskNode);
-          edges.push(makeEdge(jobId, taskId));
+          edges.push(makeEdge(prevTaskId, taskId));
+          prevTaskId = taskId;
 
           taskY += ROW_H;
         }
@@ -153,6 +155,7 @@ export function pipelineToGraph(yaml: string): {
 
       const steps: PipelineStep[] = (job as PipelineJob).steps ?? [];
       let taskY = jobY;
+      let prevTaskId: string = jobId;
       for (const step of steps) {
         const taskId = nextId('task');
         const { kind, label, taskName } = describeStep(step);
@@ -164,7 +167,8 @@ export function pipelineToGraph(yaml: string): {
         taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
         taskNode.data.details = { taskName };
         nodes.push(taskNode);
-        edges.push(makeEdge(jobId, taskId));
+        edges.push(makeEdge(prevTaskId, taskId));
+        prevTaskId = taskId;
         taskY += ROW_H;
       }
 
@@ -173,6 +177,7 @@ export function pipelineToGraph(yaml: string): {
   } else if (pipeline.steps && pipeline.steps.length > 0) {
     // ── Steps-only pipeline ────────────────────────────────────────────────────
     let taskY = 0;
+    let prevTaskId: string = triggerId;
     for (const step of pipeline.steps) {
       const taskId = nextId('task');
       const { kind, label, taskName } = describeStep(step);
@@ -184,7 +189,8 @@ export function pipelineToGraph(yaml: string): {
       taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
       taskNode.data.details = { taskName };
       nodes.push(taskNode);
-      edges.push(makeEdge(triggerId, taskId));
+      edges.push(makeEdge(prevTaskId, taskId));
+      prevTaskId = taskId;
       taskY += ROW_H;
     }
   }
