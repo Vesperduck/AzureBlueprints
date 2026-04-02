@@ -1,3 +1,5 @@
+import type { CatalogTask } from './types/pipeline';
+
 // VS Code webview API wrapper – acquires the VS Code API once and re-exports
 // typed helpers so consuming components don't need to call acquireVsCodeApi()
 // directly (which can only be called once per webview lifetime).
@@ -30,7 +32,12 @@ export interface AddTaskMessage {
   task: { name: string; friendlyName: string };
 }
 
-export type ExtensionToWebviewMessage = UpdateMessage | AddTaskMessage;
+export interface TaskCatalogReadyMessage {
+  type: 'taskCatalogReady';
+  tasks: CatalogTask[];
+}
+
+export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

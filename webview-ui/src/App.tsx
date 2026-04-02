@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
 import PropertiesPanel from './components/panels/PropertiesPanel';
+import ContextTaskMenu from './components/ContextTaskMenu';
 import { pipelineToGraph, graphToPipeline, insertTaskNode } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
-import type { GraphNodeData } from './types/pipeline';
+import type { GraphNodeData, CatalogTask } from './types/pipeline';
 import './App.css';
 
 const vscode = getVsCodeApi();
@@ -16,6 +17,12 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [parseError, setParseError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    loading: boolean;
+    tasks: CatalogTask[];
+  } | null>(null);
 
   // Count of edit messages we've sent that haven't been echoed back yet.
   // Each sent edit increments this; each incoming update decrements and is
@@ -65,16 +72,11 @@ export default function App() {
           const msg = err instanceof Error ? err.message : String(err);
           setParseError(msg);
         }
-      } else if (message.type === 'addTask') {
-        // Extension host picked a task via QuickPick — insert a new node.
-        const { nodes: n, edges: e } = insertTaskNode(
-          nodesRef.current,
-          edgesRef.current,
-          { taskName: message.task.name }
+      } else if (message.type === 'taskCatalogReady') {
+        // Populate the in-canvas context menu with the fetched catalog.
+        setContextMenu((prev) =>
+          prev ? { ...prev, loading: false, tasks: message.tasks } : null
         );
-        setNodes(n);
-        setEdges(e);
-        handleGraphChange(n, e);
       }
     };
     window.addEventListener('message', handler);
@@ -111,9 +113,22 @@ export default function App() {
   );
 
   // ── Context menu on empty canvas — request task catalog from extension ───
-  const handleContextMenu = useCallback(() => {
+  const handleContextMenu = useCallback((x: number, y: number) => {
+    setContextMenu({ x, y, loading: true, tasks: [] });
     vscode.postMessage({ type: 'requestTaskCatalog' });
   }, []);
+
+  const handleTaskSelect = useCallback((task: CatalogTask) => {
+    setContextMenu(null);
+    const { nodes: n, edges: e } = insertTaskNode(
+      nodesRef.current,
+      edgesRef.current,
+      { taskName: task.name }
+    );
+    setNodes(n);
+    setEdges(e);
+    handleGraphChange(n, e);
+  }, [handleGraphChange]);
 
   // Derive the currently selected node from live `nodes` state so the
   // PropertiesPanel never reads stale data after an edit
@@ -145,6 +160,17 @@ export default function App() {
           onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
           onPaneContextMenu={handleContextMenu}
         />
+
+        {contextMenu && (
+          <ContextTaskMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            loading={contextMenu.loading}
+            tasks={contextMenu.tasks}
+            onSelect={handleTaskSelect}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
 
         {selectedNode && (
           <PropertiesPanel

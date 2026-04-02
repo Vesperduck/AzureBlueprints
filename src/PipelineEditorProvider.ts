@@ -86,43 +86,23 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
             break;
 
           case 'requestTaskCatalog': {
-            // Use the lower-level createQuickPick API so we can show a
-            // busy spinner while the catalog is being fetched (first call
-            // only — subsequent calls are served from cache instantly).
-            const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
-            qp.placeholder = 'Search for a task to add…';
-            qp.matchOnDescription = true;
-            qp.matchOnDetail = true;
-            qp.busy = true;
-            qp.show();
-
+            // Fetch the catalog (cached after first call) and send it back to
+            // the webview, which renders its own in-canvas search menu.
             try {
               const tasks = await fetchTaskCatalog();
-              qp.items = tasks.map((t) => ({
-                label: t.name,
-                description: t.friendlyName,
-                detail: t.category,
-              }));
-              qp.busy = false;
-            } catch (err: unknown) {
-              qp.hide();
-              qp.dispose();
-              const msg = err instanceof Error ? err.message : String(err);
-              vscode.window.showErrorMessage(`Pipeline Graph: Failed to load task catalog – ${msg}`);
-              break;
-            }
-
-            const picked = await new Promise<vscode.QuickPickItem | undefined>((resolve) => {
-              qp.onDidAccept(() => resolve(qp.selectedItems[0]));
-              qp.onDidHide(() => resolve(undefined));
-            });
-            qp.dispose();
-
-            if (picked) {
               webviewPanel.webview.postMessage({
-                type: 'addTask',
-                task: { name: picked.label, friendlyName: picked.description ?? picked.label },
+                type: 'taskCatalogReady',
+                tasks: tasks.map((t) => ({
+                  name: t.name,
+                  friendlyName: t.friendlyName,
+                  category: t.category,
+                })),
               });
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              vscode.window.showErrorMessage(
+                `Pipeline Graph: Failed to load task catalog – ${msg}`
+              );
             }
             break;
           }

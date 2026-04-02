@@ -41,7 +41,7 @@ interface PipelineGraphProps {
   onEdgesChange: (edges: Edge[]) => void;
   onGraphChange: (nodes: Node<GraphNodeData>[], edges: Edge[]) => void;
   onNodeSelect: (node: Node<GraphNodeData> | null) => void;
-  onPaneContextMenu?: () => void;
+  onPaneContextMenu?: (x: number, y: number) => void;
 }
 
 export default function PipelineGraph({
@@ -103,7 +103,7 @@ export default function PipelineGraph({
   const handlePaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
-      onPaneContextMenu?.();
+      onPaneContextMenu?.(event.clientX, event.clientY);
     },
     [onPaneContextMenu]
   );

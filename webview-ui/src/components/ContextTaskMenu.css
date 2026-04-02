@@ -1,0 +1,97 @@
+.ctx-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  /* transparent click-catcher so any click outside closes the menu */
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 320px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-menu-background, #252526);
+  color: var(--vscode-menu-foreground, #cccccc);
+  border: 1px solid var(--vscode-menu-border, #454545);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.ctx-menu__search {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-menu-separatorBackground, #454545);
+  flex-shrink: 0;
+}
+
+.ctx-menu__search input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+.ctx-menu__search input:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.ctx-menu__loading {
+  padding: 12px 16px;
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.ctx-menu__list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ctx-menu__item {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+}
+
+.ctx-menu__item:hover,
+.ctx-menu__item--active {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  color: var(--vscode-list-hoverForeground, #cccccc);
+}
+
+.ctx-menu__item:focus {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
+.ctx-menu__item-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ctx-menu__item-sub {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 1px;
+}
+
+.ctx-menu__empty {
+  padding: 12px 16px;
+  font-size: 12px;
+  opacity: 0.6;
+  text-align: center;
+}

@@ -141,3 +141,10 @@ export interface GraphNodeData {
   dependsOn?: string[];
   details?: Record<string, unknown>;
 }
+
+/** A single entry in the Azure DevOps task catalog. */
+export interface CatalogTask {
+  name: string;
+  friendlyName: string;
+  category: string;
+}
