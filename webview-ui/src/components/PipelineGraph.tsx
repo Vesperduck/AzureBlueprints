@@ -54,21 +54,49 @@ export default function PipelineGraph({
   onNodeSelect,
   onPaneContextMenu,
 }: PipelineGraphProps) {
+  // Keep a ref that is always the latest nodes array.
+  // We update it synchronously inside handleNodesChange so that
+  // handleEdgesChange (which fires in the same JS tick after a node deletion)
+  // reads the post-deletion nodes rather than the stale closure value.
+  const currentNodes = useRef<Node<GraphNodeData>[]>(nodes);
+  currentNodes.current = nodes; // stays in sync after every render
+
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const updated = applyNodeChanges(changes, nodes) as Node<GraphNodeData>[];
+      // Synchronously update the ref so handleEdgesChange sees removed nodes.
+      currentNodes.current = updated;
       onNodesChange(updated);
+
+      // For node removals where there are no connected edges (isolated nodes),
+      // handleEdgesChange will never fire, so we must sync the YAML here.
+      const removedIds = changes
+        .filter((c) => c.type === 'remove')
+        .map((c) => (c as { type: 'remove'; id: string }).id);
+
+      if (removedIds.length > 0) {
+        const removedSet = new Set(removedIds);
+        const hasOrphanEdges = edges.some(
+          (e) => removedSet.has(e.source) || removedSet.has(e.target)
+        );
+        if (!hasOrphanEdges) {
+          onGraphChange(updated, edges);
+        }
+      }
     },
-    [nodes, onNodesChange]
+    [nodes, edges, onNodesChange, onGraphChange]
   );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       const updated = applyEdgeChanges(changes, edges);
       onEdgesChange(updated);
-      onGraphChange(nodes, updated);
+      // Use currentNodes.current instead of the closure `nodes` so that when
+      // this fires synchronously after a node deletion, deleted nodes are
+      // already absent from the serialised YAML.
+      onGraphChange(currentNodes.current, updated);
     },
-    [nodes, edges, onEdgesChange, onGraphChange]
+    [edges, onEdgesChange, onGraphChange]
   );
 
   const handleConnect = useCallback(

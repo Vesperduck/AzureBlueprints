@@ -75,3 +75,4 @@ npm run test:coverage
 ## Changelog
 
 - 2026-04-02: Initial README generated from codebase.
+- 2026-04-02: Fixed double-delete bug in PipelineGraph — node deletions now correctly sync the YAML in one keypress for both isolated nodes and nodes with connected edges.
