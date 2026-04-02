@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
 import PropertiesPanel from './components/panels/PropertiesPanel';
-import { pipelineToGraph, graphToPipeline } from './pipelineConverter';
+import { pipelineToGraph, graphToPipeline, insertTaskNode } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
 import type { GraphNodeData } from './types/pipeline';
 import './App.css';
@@ -31,6 +31,13 @@ export default function App() {
     selectedNodeIdRef.current = selectedNodeId;
   }, [selectedNodeId]);
 
+  // Ref mirrors of nodes/edges — kept fresh so the stale message-handler
+  // closure can read latest state for insertTaskNode.
+  const nodesRef = useRef<typeof nodes>([]);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  const edgesRef = useRef<typeof edges>([]);
+  useEffect(() => { edgesRef.current = edges; }, [edges]);
+
   // ── Listen for messages from the extension host ───────────────────────────
   useEffect(() => {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
@@ -58,6 +65,16 @@ export default function App() {
           const msg = err instanceof Error ? err.message : String(err);
           setParseError(msg);
         }
+      } else if (message.type === 'addTask') {
+        // Extension host picked a task via QuickPick — insert a new node.
+        const { nodes: n, edges: e } = insertTaskNode(
+          nodesRef.current,
+          edgesRef.current,
+          { taskName: message.task.name }
+        );
+        setNodes(n);
+        setEdges(e);
+        handleGraphChange(n, e);
       }
     };
     window.addEventListener('message', handler);
@@ -93,6 +110,11 @@ export default function App() {
     [nodes, edges, handleGraphChange]
   );
 
+  // ── Context menu on empty canvas — request task catalog from extension ───
+  const handleContextMenu = useCallback(() => {
+    vscode.postMessage({ type: 'requestTaskCatalog' });
+  }, []);
+
   // Derive the currently selected node from live `nodes` state so the
   // PropertiesPanel never reads stale data after an edit
   const selectedNode = selectedNodeId != null
@@ -121,6 +143,7 @@ export default function App() {
           onEdgesChange={setEdges}
           onGraphChange={handleGraphChange}
           onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
+          onPaneContextMenu={handleContextMenu}
         />
 
         {selectedNode && (

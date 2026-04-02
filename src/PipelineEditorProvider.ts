@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { fetchTaskCatalog } from './taskCatalog';
 
 /**
  * Provides the Pipeline Graph Editor as a VS Code custom text editor.
@@ -83,6 +84,48 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
           case 'showInfo':
             vscode.window.showInformationMessage(`Pipeline Graph: ${message.text}`);
             break;
+
+          case 'requestTaskCatalog': {
+            // Use the lower-level createQuickPick API so we can show a
+            // busy spinner while the catalog is being fetched (first call
+            // only — subsequent calls are served from cache instantly).
+            const qp = vscode.window.createQuickPick<vscode.QuickPickItem>();
+            qp.placeholder = 'Search for a task to add…';
+            qp.matchOnDescription = true;
+            qp.matchOnDetail = true;
+            qp.busy = true;
+            qp.show();
+
+            try {
+              const tasks = await fetchTaskCatalog();
+              qp.items = tasks.map((t) => ({
+                label: t.name,
+                description: t.friendlyName,
+                detail: t.category,
+              }));
+              qp.busy = false;
+            } catch (err: unknown) {
+              qp.hide();
+              qp.dispose();
+              const msg = err instanceof Error ? err.message : String(err);
+              vscode.window.showErrorMessage(`Pipeline Graph: Failed to load task catalog – ${msg}`);
+              break;
+            }
+
+            const picked = await new Promise<vscode.QuickPickItem | undefined>((resolve) => {
+              qp.onDidAccept(() => resolve(qp.selectedItems[0]));
+              qp.onDidHide(() => resolve(undefined));
+            });
+            qp.dispose();
+
+            if (picked) {
+              webviewPanel.webview.postMessage({
+                type: 'addTask',
+                task: { name: picked.label, friendlyName: picked.description ?? picked.label },
+              });
+            }
+            break;
+          }
         }
       }
     );
@@ -141,7 +184,8 @@ type WebviewMessage =
   | { type: 'ready' }
   | { type: 'edit'; yaml: string }
   | { type: 'showError'; text: string }
-  | { type: 'showInfo'; text: string };
+  | { type: 'showInfo'; text: string }
+  | { type: 'requestTaskCatalog' };
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

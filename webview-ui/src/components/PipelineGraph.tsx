@@ -41,6 +41,7 @@ interface PipelineGraphProps {
   onEdgesChange: (edges: Edge[]) => void;
   onGraphChange: (nodes: Node<GraphNodeData>[], edges: Edge[]) => void;
   onNodeSelect: (node: Node<GraphNodeData> | null) => void;
+  onPaneContextMenu?: () => void;
 }
 
 export default function PipelineGraph({
@@ -50,6 +51,7 @@ export default function PipelineGraph({
   onEdgesChange,
   onGraphChange,
   onNodeSelect,
+  onPaneContextMenu,
 }: PipelineGraphProps) {
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -98,6 +100,14 @@ export default function PipelineGraph({
     onNodeSelect(null);
   }, [onNodeSelect]);
 
+  const handlePaneContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      onPaneContextMenu?.();
+    },
+    [onPaneContextMenu]
+  );
+
   return (
     <div className="pipeline-graph-container">
       <ReactFlow
@@ -109,6 +119,7 @@ export default function PipelineGraph({
         onConnect={handleConnect}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
+        onPaneContextMenu={handlePaneContextMenu}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         minZoom={0.1}

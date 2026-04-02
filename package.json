@@ -81,6 +81,16 @@
           "group": "navigation"
         }
       ]
+    },
+    "configuration": {
+      "title": "Azure Blueprints",
+      "properties": {
+        "azureBlueprints.organizationUrl": {
+          "type": "string",
+          "default": "https://dev.azure.com/bdna",
+          "description": "Azure DevOps organization URL used to fetch the task catalog (e.g. https://dev.azure.com/myorg)."
+        }
+      }
     }
   },
   "scripts": {

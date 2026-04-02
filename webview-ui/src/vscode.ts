@@ -14,7 +14,8 @@ export type WebviewToExtensionMessage =
   | { type: 'ready' }
   | { type: 'edit'; yaml: string }
   | { type: 'showError'; text: string }
-  | { type: 'showInfo'; text: string };
+  | { type: 'showInfo'; text: string }
+  | { type: 'requestTaskCatalog' };
 
 // ── Message shapes (extension → webview) ─────────────────────────────────────
 
@@ -24,7 +25,12 @@ export interface UpdateMessage {
   fileName: string;
 }
 
-export type ExtensionToWebviewMessage = UpdateMessage;
+export interface AddTaskMessage {
+  type: 'addTask';
+  task: { name: string; friendlyName: string };
+}
+
+export type ExtensionToWebviewMessage = UpdateMessage | AddTaskMessage;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

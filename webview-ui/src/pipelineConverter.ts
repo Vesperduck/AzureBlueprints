@@ -201,6 +201,77 @@ export function pipelineToGraph(yaml: string): {
   return { nodes, edges };
 }
 
+// ── Insert task node ──────────────────────────────────────────────────────────
+
+export interface InsertTaskInput {
+  /** YAML task reference, e.g. "DotNetCoreCLI@2" */
+  taskName: string;
+}
+
+/**
+ * Appends a new task node to the current graph, auto-connecting it to the
+ * deepest leaf task node in the chain (falling back to the last job node, then
+ * the trigger node).  Returns updated nodes + edges ready to be passed to
+ * setNodes/setEdges.
+ */
+export function insertTaskNode(
+  currentNodes: Node<GraphNodeData>[],
+  currentEdges: Edge[],
+  input: InsertTaskInput
+): { nodes: Node<GraphNodeData>[]; edges: Edge[] } {
+  const TASK_KINDS: GraphNodeKind[] = ['task', 'script', 'checkout', 'publish', 'download'];
+  const taskKindSet = new Set<string>(TASK_KINDS);
+
+  const taskNodes = currentNodes.filter((n) => taskKindSet.has(n.data.kind));
+
+  // Place the new node one row below the last existing task node
+  const maxY =
+    taskNodes.length > 0
+      ? Math.max(...taskNodes.map((n) => n.position.y))
+      : -ROW_H;
+  const position = { x: TASK_X, y: maxY + ROW_H };
+
+  // Find the leaf task node (has no outgoing task→task edge) to connect from
+  const taskNodeIds = new Set(taskNodes.map((n) => n.id));
+  const taskSources = new Set(
+    currentEdges
+      .filter((e) => taskNodeIds.has(e.source) && taskNodeIds.has(e.target))
+      .map((e) => e.source)
+  );
+  const leafTasks = taskNodes.filter((n) => !taskSources.has(n.id));
+
+  let anchorId: string | undefined;
+  if (leafTasks.length > 0) {
+    // Pick the leaf with the highest Y (last in the visual chain)
+    anchorId = leafTasks.sort((a, b) => b.position.y - a.position.y)[0].id;
+  } else {
+    // No task nodes yet — connect to job or trigger
+    anchorId =
+      currentNodes.find((n) => n.data.kind === 'job')?.id ??
+      currentNodes.find((n) => n.data.kind === 'trigger')?.id;
+  }
+
+  const newId = `task-ctx-${Date.now()}`;
+  const newNode: Node<GraphNodeData> = {
+    id: newId,
+    type: 'task',
+    position,
+    data: {
+      kind: 'task',
+      label: input.taskName,
+      rawId: input.taskName,
+      details: { taskName: input.taskName },
+    },
+  };
+
+  return {
+    nodes: [...currentNodes, newNode],
+    edges: anchorId
+      ? [...currentEdges, makeEdge(anchorId, newId)]
+      : currentEdges,
+  };
+}
+
 // ── Graph → YAML ──────────────────────────────────────────────────────────────
 
 export function graphToPipeline(

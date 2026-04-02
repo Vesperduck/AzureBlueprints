@@ -8,7 +8,7 @@
 
 import type { Edge, Node } from 'reactflow';
 import * as jsYaml from 'js-yaml';
-import { pipelineToGraph, graphToPipeline } from '../pipelineConverter';
+import { pipelineToGraph, graphToPipeline, insertTaskNode } from '../pipelineConverter';
 import type { GraphNodeData } from '../types/pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -783,5 +783,73 @@ describe('displayName round-trip', () => {
     const yaml = graphToPipeline(nodes, edges);
     const parsed = jsYaml.load(yaml) as { steps: Array<Record<string, unknown>> };
     expect(parsed.steps[0]['displayName']).toBe('Say hello');
+  });
+});
+
+// ── insertTaskNode ────────────────────────────────────────────────────────────
+
+describe('insertTaskNode', () => {
+  it('adds exactly one new task node', () => {
+    const { nodes, edges } = pipelineToGraph('trigger: none');
+    const result = insertTaskNode(nodes, edges, { taskName: 'DotNetCoreCLI@2' });
+    const tasksBefore = nodes.filter((n) => n.data.kind === 'task');
+    const tasksAfter = result.nodes.filter((n) => n.data.kind === 'task');
+    expect(tasksAfter).toHaveLength(tasksBefore.length + 1);
+  });
+
+  it('sets rawId and label to taskName', () => {
+    const { nodes, edges } = pipelineToGraph('trigger: none');
+    const result = insertTaskNode(nodes, edges, { taskName: 'DotNetCoreCLI@2' });
+    const newTask = result.nodes[result.nodes.length - 1];
+    expect(newTask.data.rawId).toBe('DotNetCoreCLI@2');
+    expect(newTask.data.label).toBe('DotNetCoreCLI@2');
+    expect(newTask.data.details?.['taskName']).toBe('DotNetCoreCLI@2');
+  });
+
+  it('connects new node to the trigger when graph has no tasks', () => {
+    const { nodes, edges } = pipelineToGraph('trigger: none');
+    const result = insertTaskNode(nodes, edges, { taskName: 'MyTask@1' });
+    const trigger = result.nodes.find((n) => n.data.kind === 'trigger')!;
+    const newTask = result.nodes[result.nodes.length - 1];
+    const newEdge = result.edges.find((e) => e.target === newTask.id);
+    expect(newEdge).toBeDefined();
+    expect(newEdge!.source).toBe(trigger.id);
+  });
+
+  it('connects new node to the last leaf task in a chain', () => {
+    const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const result = insertTaskNode(nodes, edges, { taskName: 'C@1' });
+    const taskB = result.nodes.find((n) => n.data.rawId === 'B@1')!;
+    const newTask = result.nodes[result.nodes.length - 1];
+    const newEdge = result.edges.find((e) => e.target === newTask.id);
+    expect(newEdge!.source).toBe(taskB.id);
+  });
+
+  it('places new node below the last existing task (higher Y)', () => {
+    const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const result = insertTaskNode(nodes, edges, { taskName: 'C@1' });
+    const taskNodes = result.nodes.filter((n) => n.data.kind === 'task');
+    const ys = taskNodes.map((n) => n.position.y);
+    const newTask = result.nodes[result.nodes.length - 1];
+    // New task Y must be greater than all previous task Ys
+    expect(newTask.position.y).toBeGreaterThan(Math.max(...ys.slice(0, -1)));
+  });
+
+  it('serialises new node correctly after insertion', () => {
+    const yaml = `steps:\n  - task: A@1`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const result = insertTaskNode(nodes, edges, { taskName: 'B@2' });
+    const out = graphToPipeline(result.nodes, result.edges);
+    const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+    expect(parsed.steps).toHaveLength(2);
+    expect(parsed.steps[1]['task']).toBe('B@2');
+  });
+
+  it('works on an empty graph (no nodes at all)', () => {
+    const result = insertTaskNode([], [], { taskName: 'Standalone@1' });
+    expect(result.nodes).toHaveLength(1);
+    expect(result.edges).toHaveLength(0);
   });
 });
