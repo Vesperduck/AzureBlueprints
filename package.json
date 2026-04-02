@@ -1,0 +1,117 @@
+{
+  "name": "azure-blueprints",
+  "displayName": "Azure Blueprints – Pipeline Graph Editor",
+  "description": "Visual node-based graph editor for Azure DevOps YAML pipelines, inspired by Unreal Engine Blueprints.",
+  "version": "0.1.0",
+  "publisher": "azure-blueprints",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "icon": "resources/icon.png",
+  "keywords": [
+    "azure devops",
+    "pipelines",
+    "yaml",
+    "graph",
+    "visual editor"
+  ],
+  "activationEvents": [
+    "onLanguage:yaml",
+    "onCommand:azureBlueprints.openGraphEditor"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "azureBlueprints.openGraphEditor",
+        "title": "Open as Pipeline Graph Editor",
+        "category": "Azure Blueprints",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "azureBlueprints.syncToYaml",
+        "title": "Sync Graph to YAML",
+        "category": "Azure Blueprints",
+        "icon": "$(sync)"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "azureBlueprints.pipelineGraphEditor",
+        "displayName": "Pipeline Graph Editor",
+        "selector": [
+          {
+            "filenamePattern": "azure-pipelines*.yml"
+          },
+          {
+            "filenamePattern": "azure-pipelines*.yaml"
+          },
+          {
+            "filenamePattern": ".azure-pipelines/*.yml"
+          },
+          {
+            "filenamePattern": ".azure-pipelines/*.yaml"
+          },
+          {
+            "filenamePattern": "pipelines/*.yml"
+          },
+          {
+            "filenamePattern": "pipelines/*.yaml"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "azureBlueprints.openGraphEditor",
+          "group": "navigation",
+          "when": "resourceLangId == yaml"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "azureBlueprints.openGraphEditor",
+          "when": "resourceLangId == yaml",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build:prod",
+    "build": "webpack --mode development",
+    "build:prod": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "watch:webview": "webpack --config webpack.webview.config.js --mode development --watch",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "css-loader": "^6.10.0",
+    "eslint": "^8.56.0",
+    "style-loader": "^3.3.4",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "reactflow": "^11.11.3"
+  }
+}

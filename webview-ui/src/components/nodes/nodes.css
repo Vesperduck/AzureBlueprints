@@ -1,0 +1,148 @@
+/* ── Shared node styles ────────────────────────────────────────────────────── */
+
+.node {
+  min-width: 160px;
+  max-width: 240px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background: var(--vscode-sideBar-background, #252526);
+  color: var(--vscode-foreground, #ccc);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.node--selected {
+  box-shadow: 0 0 0 2px #0078d4, 0 2px 12px rgba(0, 120, 212, 0.35);
+  border-color: #0078d4 !important;
+}
+
+.node--disabled {
+  opacity: 0.45;
+}
+
+/* ── Header strip ──────────────────────────────────────────────────────────── */
+
+.node__header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.node__icon {
+  font-size: 12px;
+}
+
+.node__icon--mono {
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.node__kind-label {
+  flex: 1;
+  opacity: 0.85;
+}
+
+/* ── Badge ─────────────────────────────────────────────────────────────────── */
+
+.node__badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.node__badge--disabled {
+  background: rgba(248, 81, 73, 0.25);
+  color: #f85149;
+}
+
+.node__badge--deploy {
+  background: rgba(0, 120, 212, 0.25);
+  color: #4fc3f7;
+}
+
+.node__badge--warn {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+
+/* ── Body ──────────────────────────────────────────────────────────────────── */
+
+.node__label {
+  padding: 5px 8px 2px;
+  font-weight: 600;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.node__sub {
+  padding: 0 8px 4px;
+  font-size: 10px;
+  opacity: 0.65;
+  font-style: italic;
+}
+
+.node__detail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  opacity: 0.8;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.node__detail--condition {
+  color: var(--vscode-textLink-foreground, #4fc3f7);
+}
+
+.node__depends {
+  padding: 2px 8px 4px;
+  font-size: 10px;
+  opacity: 0.6;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.node__detail-icon {
+  opacity: 0.6;
+}
+
+/* ── Per-kind colour strips ──────────────────────────────────────────────── */
+
+.node--trigger .node__header { background: #3b3bff22; color: #9999ff; }
+.node--trigger              { border-color: #4444bb; }
+
+.node--stage .node__header  { background: #0078d422; color: #4fc3f7; }
+.node--stage                { border-color: #005a9e; }
+
+.node--job .node__header    { background: #107c1022; color: #81c784; }
+.node--job                  { border-color: #0d5e0d; }
+
+.node--task .node__header,
+.node--script .node__header,
+.node--bash .node__header,
+.node--powershell .node__header { background: #d83b0122; color: #ff8a65; }
+.node--task,
+.node--script,
+.node--bash,
+.node--powershell               { border-color: #a02d00; }
+
+.node--checkout .node__header { background: #79554822; color: #bcaaa4; }
+.node--checkout               { border-color: #5d4037; }
+
+.node--publish .node__header  { background: #ff8c0022; color: #ffcc80; }
+.node--publish                { border-color: #c56200; }
+
+.node--download .node__header { background: #00ced122; color: #80deea; }
+.node--download               { border-color: #00a0a5; }

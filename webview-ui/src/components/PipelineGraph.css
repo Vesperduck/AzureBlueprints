@@ -1,0 +1,43 @@
+/* ── Pipeline Graph container ─────────────────────────────────────────────── */
+
+.pipeline-graph-container {
+  flex: 1;
+  position: relative;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.pipeline-graph-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--vscode-disabledForeground, #888);
+  pointer-events: none;
+}
+
+.pipeline-graph-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.pipeline-graph-empty-hint {
+  font-size: 12px !important;
+  opacity: 0.6;
+}
+
+/* ── Override ReactFlow defaults to respect VS Code theme ────────────────── */
+
+.react-flow__controls-button {
+  background: var(--vscode-button-secondaryBackground, #3c3c3c) !important;
+  border-color: var(--vscode-widget-border, #454545) !important;
+  fill: var(--vscode-button-secondaryForeground, #cccccc) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #494949) !important;
+}

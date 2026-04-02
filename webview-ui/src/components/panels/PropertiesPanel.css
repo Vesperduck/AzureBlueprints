@@ -1,0 +1,139 @@
+/* ── Properties Panel ────────────────────────────────────────────────────── */
+
+.props-panel {
+  width: 280px;
+  min-width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-sideBar-background, #252526);
+  border-left: 1px solid var(--vscode-widget-border, #454545);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.props-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--vscode-sideBarSectionHeader-background, #202020);
+  border-bottom: 1px solid var(--vscode-widget-border, #454545);
+  flex-shrink: 0;
+}
+
+.props-panel__title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.props-panel__close {
+  background: none;
+  border: none;
+  color: var(--vscode-foreground, #ccc);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.props-panel__close:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, #444);
+}
+
+.props-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────── */
+
+.props-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.props-row--col {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.props-label {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.props-hint {
+  font-weight: 400;
+  opacity: 0.55;
+}
+
+/* ── Inputs ───────────────────────────────────────────────────────────────── */
+
+.props-input {
+  width: 100%;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, #555);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.props-input:focus {
+  border-color: var(--vscode-focusBorder, #0078d4);
+}
+
+.props-textarea {
+  resize: vertical;
+  min-height: 64px;
+  font-family: var(--vscode-editor-font-family, 'Cascadia Code', monospace);
+  font-size: 11px;
+}
+
+.props-checkbox {
+  accent-color: #0078d4;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+/* ── Kind badge ───────────────────────────────────────────────────────────── */
+
+.props-kind-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.props-kind--trigger  { background: #3b3bff33; color: #9999ff; }
+.props-kind--stage    { background: #0078d433; color: #4fc3f7; }
+.props-kind--job      { background: #107c1033; color: #81c784; }
+.props-kind--task,
+.props-kind--script,
+.props-kind--bash,
+.props-kind--powershell { background: #d83b0133; color: #ff8a65; }
+.props-kind--checkout { background: #79554833; color: #bcaaa4; }
+.props-kind--publish  { background: #ff8c0033; color: #ffcc80; }
+.props-kind--download { background: #00ced133; color: #80deea; }
