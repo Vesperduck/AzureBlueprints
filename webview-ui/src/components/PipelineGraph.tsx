@@ -1,10 +1,11 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import ReactFlow, {
   Background,
   BackgroundVariant,
   Controls,
   MiniMap,
   addEdge,
+  updateEdge,
   applyEdgeChanges,
   applyNodeChanges,
   type Connection,
@@ -108,6 +109,37 @@ export default function PipelineGraph({
     [onPaneContextMenu]
   );
 
+  // ── Edge drag-to-disconnect ───────────────────────────────────────────────
+  // Track whether the in-flight drag successfully reconnected to a node.
+  // If the drag ends without reconnecting (dropped on empty space), delete.
+  const edgeReconnected = useRef(false);
+
+  const handleEdgeUpdateStart = useCallback(() => {
+    edgeReconnected.current = false;
+  }, []);
+
+  const handleEdgeUpdate = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      edgeReconnected.current = true;
+      const updated = updateEdge(oldEdge, newConnection, edges);
+      onEdgesChange(updated);
+      onGraphChange(nodes, updated);
+    },
+    [nodes, edges, onEdgesChange, onGraphChange]
+  );
+
+  const handleEdgeUpdateEnd = useCallback(
+    (_: MouseEvent | TouchEvent, edge: Edge) => {
+      if (!edgeReconnected.current) {
+        // Dropped on empty space — remove the edge
+        const updated = edges.filter((e) => e.id !== edge.id);
+        onEdgesChange(updated);
+        onGraphChange(nodes, updated);
+      }
+    },
+    [nodes, edges, onEdgesChange, onGraphChange]
+  );
+
   return (
     <div className="pipeline-graph-container">
       <ReactFlow
@@ -117,6 +149,9 @@ export default function PipelineGraph({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onEdgeUpdateStart={handleEdgeUpdateStart}
+        onEdgeUpdate={handleEdgeUpdate}
+        onEdgeUpdateEnd={handleEdgeUpdateEnd}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
