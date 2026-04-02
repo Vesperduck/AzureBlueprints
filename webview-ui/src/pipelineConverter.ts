@@ -111,7 +111,7 @@ export function pipelineToGraph(yaml: string): {
 
         for (const step of steps) {
           const taskId = nextId('task');
-          const { kind, label, taskName } = describeStep(step);
+          const { kind, label, taskName, displayName } = describeStep(step);
 
           const taskNode = makeNode(taskId, kind, label, label, taskId, {
             x: TASK_X,
@@ -120,6 +120,7 @@ export function pipelineToGraph(yaml: string): {
           taskNode.data.condition = (step as { condition?: string }).condition;
           taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
           taskNode.data.details = { taskName };
+          taskNode.data.displayName = displayName;
           nodes.push(taskNode);
           edges.push(makeEdge(prevTaskId, taskId));
           prevTaskId = taskId;
@@ -158,7 +159,7 @@ export function pipelineToGraph(yaml: string): {
       let prevTaskId: string = jobId;
       for (const step of steps) {
         const taskId = nextId('task');
-        const { kind, label, taskName } = describeStep(step);
+        const { kind, label, taskName, displayName } = describeStep(step);
         const taskNode = makeNode(taskId, kind, label, label, taskId, {
           x: TASK_X,
           y: taskY,
@@ -166,6 +167,7 @@ export function pipelineToGraph(yaml: string): {
         taskNode.data.condition = (step as { condition?: string }).condition;
         taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
         taskNode.data.details = { taskName };
+        taskNode.data.displayName = displayName;
         nodes.push(taskNode);
         edges.push(makeEdge(prevTaskId, taskId));
         prevTaskId = taskId;
@@ -180,7 +182,7 @@ export function pipelineToGraph(yaml: string): {
     let prevTaskId: string = triggerId;
     for (const step of pipeline.steps) {
       const taskId = nextId('task');
-      const { kind, label, taskName } = describeStep(step);
+      const { kind, label, taskName, displayName } = describeStep(step);
       const taskNode = makeNode(taskId, kind, label, label, taskId, {
         x: TASK_X,
         y: taskY,
@@ -188,6 +190,7 @@ export function pipelineToGraph(yaml: string): {
       taskNode.data.condition = (step as { condition?: string }).condition;
       taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
       taskNode.data.details = { taskName };
+      taskNode.data.displayName = displayName;
       nodes.push(taskNode);
       edges.push(makeEdge(prevTaskId, taskId));
       prevTaskId = taskId;
@@ -333,12 +336,14 @@ function describeStep(step: PipelineStep): {
   kind: GraphNodeKind;
   label: string;
   taskName?: string;
+  displayName?: string;
 } {
   if ('task' in step) {
     return {
       kind: 'task',
       label: step.displayName ?? step.task,
       taskName: step.task,
+      displayName: step.displayName,
     };
   }
   if ('script' in step) {
@@ -346,6 +351,7 @@ function describeStep(step: PipelineStep): {
       kind: 'script',
       label: step.displayName ?? 'Script',
       taskName: truncateScript(step.script),
+      displayName: step.displayName,
     };
   }
   if ('bash' in step) {
@@ -353,6 +359,7 @@ function describeStep(step: PipelineStep): {
       kind: 'script',
       label: step.displayName ?? 'Bash',
       taskName: truncateScript(step.bash),
+      displayName: step.displayName,
     };
   }
   if ('powershell' in step) {
@@ -360,6 +367,7 @@ function describeStep(step: PipelineStep): {
       kind: 'script',
       label: step.displayName ?? 'PowerShell',
       taskName: truncateScript(step.powershell),
+      displayName: step.displayName,
     };
   }
   if ('checkout' in step) {
@@ -370,12 +378,14 @@ function describeStep(step: PipelineStep): {
       kind: 'publish',
       label: step.displayName ?? `publish: ${step.artifact}`,
       taskName: step.publish,
+      displayName: step.displayName,
     };
   }
   if ('download' in step) {
     return {
       kind: 'download',
       label: step.displayName ?? `download: ${step.download}`,
+      displayName: step.displayName,
     };
   }
   return { kind: 'task', label: 'Unknown step' };
@@ -447,7 +457,9 @@ function buildStepObject(tn: Node<GraphNodeData>): Record<string, unknown> {
       step['task'] = tn.data.rawId;
   }
 
-  if (tn.data.displayName && tn.data.displayName !== tn.data.label) {
+  // Write displayName whenever present – comparing to label is wrong because
+  // label IS set from displayName during parsing, so they would always match.
+  if (tn.data.displayName) {
     step['displayName'] = tn.data.displayName;
   }
   if (tn.data.condition) {

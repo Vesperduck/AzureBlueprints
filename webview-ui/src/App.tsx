@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
 import PropertiesPanel from './components/panels/PropertiesPanel';
@@ -12,21 +12,48 @@ const vscode = getVsCodeApi();
 export default function App() {
   const [nodes, setNodes] = useState<Node<GraphNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-  const [selectedNode, setSelectedNode] = useState<Node<GraphNodeData> | null>(null);
+  // Track selected node by ID so the panel always reads fresh data from `nodes`
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [parseError, setParseError] = useState<string | null>(null);
+
+  // Count of edit messages we've sent that haven't been echoed back yet.
+  // Each sent edit increments this; each incoming update decrements and is
+  // ignored if the count is still positive. Only updates that arrive when
+  // the counter reaches zero are genuine external edits (e.g. the user
+  // editing the raw YAML file directly).
+  const pendingEditCount = useRef(0);
+
+  // Ref mirror of selectedNodeId so the stale message-handler closure can
+  // read the current selection without needing to be added to its deps array.
+  const selectedNodeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId;
+  }, [selectedNodeId]);
 
   // ── Listen for messages from the extension host ───────────────────────────
   useEffect(() => {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
       const message = event.data;
       if (message.type === 'update') {
+        // Ignore echo-backs of our own edits regardless of order/timing
+        if (pendingEditCount.current > 0) {
+          pendingEditCount.current -= 1;
+          return;
+        }
+        // Genuine external update (user edited the YAML file directly)
         setFileName(message.fileName);
         try {
           const { nodes: n, edges: e } = pipelineToGraph(message.yaml);
           setNodes(n);
           setEdges(e);
           setParseError(null);
+          // Only close the panel if the selected node no longer exists in
+          // the re-parsed graph (node IDs are positional and deterministic).
+          const selId = selectedNodeIdRef.current;
+          if (selId !== null && !n.some((node) => node.id === selId)) {
+            setSelectedNodeId(null);
+          }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           setParseError(msg);
@@ -44,6 +71,7 @@ export default function App() {
     (updatedNodes: Node<GraphNodeData>[], updatedEdges: Edge[]) => {
       try {
         const yaml = graphToPipeline(updatedNodes, updatedEdges);
+        pendingEditCount.current += 1;
         vscode.postMessage({ type: 'edit', yaml });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -56,16 +84,20 @@ export default function App() {
   // ── Node property edits ───────────────────────────────────────────────────
   const handleNodeDataChange = useCallback(
     (nodeId: string, data: Partial<GraphNodeData>) => {
-      setNodes((prev) => {
-        const updated = prev.map((n) =>
-          n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
-        );
-        handleGraphChange(updated, edges);
-        return updated;
-      });
+      const updated = nodes.map((n) =>
+        n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n
+      );
+      setNodes(updated);
+      handleGraphChange(updated, edges);
     },
-    [edges, handleGraphChange]
+    [nodes, edges, handleGraphChange]
   );
+
+  // Derive the currently selected node from live `nodes` state so the
+  // PropertiesPanel never reads stale data after an edit
+  const selectedNode = selectedNodeId != null
+    ? (nodes.find((n) => n.id === selectedNodeId) ?? null)
+    : null;
 
   return (
     <div className="app-container">
@@ -88,14 +120,14 @@ export default function App() {
           onNodesChange={setNodes}
           onEdgesChange={setEdges}
           onGraphChange={handleGraphChange}
-          onNodeSelect={setSelectedNode}
+          onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
         />
 
         {selectedNode && (
           <PropertiesPanel
             node={selectedNode}
             onDataChange={handleNodeDataChange}
-            onClose={() => setSelectedNode(null)}
+            onClose={() => setSelectedNodeId(null)}
           />
         )}
       </div>
