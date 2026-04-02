@@ -140,6 +140,9 @@ export interface GraphNodeData {
   continueOnError?: boolean;
   dependsOn?: string[];
   details?: Record<string, unknown>;
+  /** ID of the job (or trigger for steps-only) node this task was parsed under.
+   *  Used as a fallback in graphToPipeline when the connecting edge has been removed. */
+  parentId?: string;
 }
 
 /** A single entry in the Azure DevOps task catalog. */

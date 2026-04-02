@@ -649,6 +649,30 @@ jobs:
     expect(Array.isArray(deploy['dependsOn'])).toBe(true);
     expect(deploy['dependsOn']).toEqual(['Build', 'Test']);
   });
+
+  // ── Edge removal regression ────────────────────────────────────────────────
+
+  it('[regression] removing the job→task edge preserves all tasks in YAML', () => {
+    const yaml = `
+jobs:
+  - job: MyJob
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: A@1
+      - task: B@1
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const jobNode = nodes.find((n) => n.data.kind === 'job')!;
+    const taskNodes = nodes.filter((n) => n.data.kind === 'task');
+    // Remove the edge from job → first task (breaks the chain walk)
+    const edgeToRemove = edges.find((e) => e.source === jobNode.id && taskNodes.some((t) => t.id === e.target))!;
+    const updatedEdges = edges.filter((e) => e.id !== edgeToRemove.id);
+    const out = graphToPipeline(nodes, updatedEdges);
+    const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+    const steps = parsed.jobs[0]['steps'] as Array<Record<string, unknown>>;
+    expect(steps.length).toBeGreaterThanOrEqual(2);
+  });
 });
 
 // ── Step type detection ────────────────────────────────────────────────────────

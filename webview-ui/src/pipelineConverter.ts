@@ -121,10 +121,10 @@ export function pipelineToGraph(yaml: string): {
           taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
           taskNode.data.details = { taskName };
           taskNode.data.displayName = displayName;
+          taskNode.data.parentId = jobId;
           nodes.push(taskNode);
           edges.push(makeEdge(prevTaskId, taskId));
           prevTaskId = taskId;
-
           taskY += ROW_H;
         }
 
@@ -168,6 +168,7 @@ export function pipelineToGraph(yaml: string): {
         taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
         taskNode.data.details = { taskName };
         taskNode.data.displayName = displayName;
+        taskNode.data.parentId = jobId;
         nodes.push(taskNode);
         edges.push(makeEdge(prevTaskId, taskId));
         prevTaskId = taskId;
@@ -191,6 +192,7 @@ export function pipelineToGraph(yaml: string): {
       taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
       taskNode.data.details = { taskName };
       taskNode.data.displayName = displayName;
+      taskNode.data.parentId = triggerId;
       nodes.push(taskNode);
       edges.push(makeEdge(prevTaskId, taskId));
       prevTaskId = taskId;
@@ -482,6 +484,15 @@ function buildJobObject(
     if (!taskNode) { break; }
     taskChildren.push(taskNode);
     currentId = (childMap.get(currentId) ?? []).find((id) => taskNodeIdSet.has(id));
+  }
+
+  // Fallback: if no tasks found via edges (e.g. connecting edge was deleted),
+  // use the parentId stored on each task node at parse time.
+  if (taskChildren.length === 0) {
+    const byParent = taskNodes
+      .filter((t) => t.data.parentId === jn.id)
+      .sort((a, b) => a.position.y - b.position.y);
+    taskChildren.push(...byParent);
   }
 
   const steps = taskChildren.map((tn) => buildStepObject(tn));

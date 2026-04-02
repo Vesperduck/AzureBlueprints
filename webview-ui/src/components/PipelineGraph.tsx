@@ -56,17 +56,15 @@ export default function PipelineGraph({
 }: PipelineGraphProps) {
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const updated = applyNodeChanges(changes, nodes) as Node<GraphNodeData>[];
+      // Block automatic node removal — nodes are only removed intentionally
+      // (e.g. via a delete button in the properties panel). Filtering out
+      // 'remove' changes prevents ReactFlow from deleting nodes as a
+      // side-effect of edge deletion or the Delete key.
+      const safeChanges = changes.filter((c) => c.type !== 'remove');
+      const updated = applyNodeChanges(safeChanges, nodes) as Node<GraphNodeData>[];
       onNodesChange(updated);
-      // Only emit graph-change for position/data changes (not selection)
-      const hasStructuralChange = changes.some(
-        (c) => c.type === 'remove' || c.type === 'add'
-      );
-      if (hasStructuralChange) {
-        onGraphChange(updated, edges);
-      }
     },
-    [nodes, edges, onNodesChange, onGraphChange]
+    [nodes, onNodesChange]
   );
 
   const handleEdgesChange = useCallback(
