@@ -401,9 +401,17 @@ function buildJobObject(
   childMap: Map<string, string[]>,
   taskNodes: Node<GraphNodeData>[]
 ): Record<string, unknown> {
-  const taskChildren = (childMap.get(jn.id) ?? [])
-    .map((tid) => taskNodes.find((t) => t.id === tid))
-    .filter((t): t is Node<GraphNodeData> => !!t);
+  // Tasks are chained sequentially (job→task1→task2→…), not as a flat
+  // hub-and-spoke from the job. Walk the linked chain to collect all steps.
+  const taskNodeIdSet = new Set(taskNodes.map((t) => t.id));
+  const taskChildren: Node<GraphNodeData>[] = [];
+  let currentId: string | undefined = (childMap.get(jn.id) ?? []).find((id) => taskNodeIdSet.has(id));
+  while (currentId !== undefined) {
+    const taskNode = taskNodes.find((t) => t.id === currentId);
+    if (!taskNode) { break; }
+    taskChildren.push(taskNode);
+    currentId = (childMap.get(currentId) ?? []).find((id) => taskNodeIdSet.has(id));
+  }
 
   const steps = taskChildren.map((tn) => buildStepObject(tn));
 

@@ -555,6 +555,58 @@ describe('graphToPipeline', () => {
     expect(job['pool']).toEqual({ vmImage: 'windows-latest' });
   });
 
+  // ── Sequential task chain serialisation ───────────────────────────────────
+
+  it('[regression] all tasks in a sequential chain are preserved when serialising', () => {
+    const yaml = `
+jobs:
+  - job: MyJob
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: TaskA@1
+        displayName: Step A
+      - task: TaskB@1
+        displayName: Step B
+      - task: TaskC@1
+        displayName: Step C
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+    const steps = parsed.jobs[0]['steps'] as Array<Record<string, unknown>>;
+    expect(steps).toHaveLength(3);
+    expect(steps[0]['task']).toBe('TaskA@1');
+    expect(steps[1]['task']).toBe('TaskB@1');
+    expect(steps[2]['task']).toBe('TaskC@1');
+  });
+
+  it('[regression] editing a field on task 1 does not drop task 2', () => {
+    const yaml = `
+jobs:
+  - job: MyJob
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: TaskA@1
+        displayName: Step A
+      - task: TaskB@1
+        displayName: Step B
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    // Simulate editing displayName on the first task node (as PropertiesPanel would)
+    const task1 = nodes.find((n) => n.data.kind === 'task' && n.data.displayName === 'Step A')!;
+    const updatedNodes = nodes.map((n) =>
+      n.id === task1.id ? { ...n, data: { ...n.data, displayName: 'Step A edited' } } : n
+    );
+    const out = graphToPipeline(updatedNodes, edges);
+    const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+    const steps = parsed.jobs[0]['steps'] as Array<Record<string, unknown>>;
+    expect(steps).toHaveLength(2);
+    expect(steps[0]['displayName']).toBe('Step A edited');
+    expect(steps[1]['task']).toBe('TaskB@1');
+  });
+
   // ── Display name omitted when same as rawId ────────────────────────────────
 
   it('omits displayName in YAML when it matches rawId', () => {
