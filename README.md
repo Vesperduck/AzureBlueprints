@@ -1,0 +1,77 @@
+# Azure Blueprints – Pipeline Graph Editor
+
+A Visual Studio Code extension that renders Azure DevOps YAML pipelines as interactive node-based graphs, inspired by Unreal Engine Blueprints. Edit the YAML and see the graph update live, or manipulate nodes and have the YAML regenerated automatically.
+
+## Features
+
+- **Visual graph editor** – Stages, jobs, and tasks rendered as connected nodes using ReactFlow.
+- **Bidirectional sync** – YAML ↔ graph conversion kept in sync; edits in either direction are reflected in the other.
+- **Context task menu** – Right-click any node to insert a step from the Azure DevOps task catalog.
+- **Task catalog** – Fetches available pipeline tasks from your Azure DevOps organisation (OAuth via VS Code built-in Microsoft account).
+- **Properties panel** – Select a node to view and edit its properties.
+- **Custom editor** – Registered for `azure-pipelines*.yml` and `*.pipeline.yml`; also launchable via the command palette.
+
+## Architecture
+
+| Module | Responsibility |
+|--------|---------------|
+| [src/extension.ts](src/extension.ts) | VS Code extension entry point; registers the editor and command |
+| [src/PipelineEditorProvider.ts](src/PipelineEditorProvider.ts) | Custom text editor provider; owns the webview and document↔webview message bus |
+| [src/taskCatalog.ts](src/taskCatalog.ts) | Fetches and caches the Azure DevOps task catalog via OAuth |
+| [webview-ui/src/pipelineConverter.ts](webview-ui/src/pipelineConverter.ts) | YAML ↔ ReactFlow graph conversion logic |
+| [webview-ui/src/App.tsx](webview-ui/src/App.tsx) | Root React component; wires graph canvas, panels, and menus |
+| [webview-ui/src/components/PipelineGraph.tsx](webview-ui/src/components/PipelineGraph.tsx) | ReactFlow canvas with node/edge rendering |
+| [webview-ui/src/components/PropertiesPanel.tsx](webview-ui/src/components/PropertiesPanel.tsx) | Sidebar panel for selected node properties |
+| [webview-ui/src/components/ContextTaskMenu.tsx](webview-ui/src/components/ContextTaskMenu.tsx) | Right-click menu for inserting pipeline tasks |
+
+## API / Exports
+
+### `pipelineToGraph(yaml: string): { nodes, edges }`
+Parses an Azure DevOps YAML pipeline string and returns ReactFlow `nodes` and `edges` representing the trigger → stage → job → task hierarchy.
+
+### `graphToPipeline(nodes, edges): string`
+Serialises a ReactFlow graph back to Azure DevOps YAML.
+
+### `insertTaskNode(input: InsertTaskInput, nodes, edges): { nodes, edges }`
+Appends a new task node to the graph, auto-connecting it to the deepest leaf, and returns the updated `nodes` and `edges`.
+
+### `class PipelineEditorProvider`
+VS Code `CustomTextEditorProvider` implementation. Use `PipelineEditorProvider.register(context)` to activate.
+
+### `fetchTaskCatalog(): Promise<TaskCatalogItem[]>`
+Returns the full Azure DevOps task catalog for the configured organisation. Results are cached for the lifetime of the extension host.
+
+### `clearTaskCatalogCache(): void`
+Clears the in-memory task catalog cache, forcing the next `fetchTaskCatalog()` call to re-fetch.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- VS Code 1.85+
+
+### Install & Build
+
+```sh
+npm install
+npm run build
+```
+
+Press **F5** in VS Code to launch the extension in a new Extension Development Host window.
+
+### Running Tests
+
+```sh
+npm test
+```
+
+### Coverage
+
+```sh
+npm run test:coverage
+```
+
+## Changelog
+
+- 2026-04-02: Initial README generated from codebase.
