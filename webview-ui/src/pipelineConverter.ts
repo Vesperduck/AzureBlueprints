@@ -419,12 +419,18 @@ export function graphToPipeline(
       if (sn.data.displayName && sn.data.displayName !== sn.data.rawId) {
         stageObj['displayName'] = sn.data.displayName;
       }
-      if (sn.data.dependsOn && sn.data.dependsOn.length > 0) {
-        stageObj['dependsOn'] =
-          sn.data.dependsOn.length === 1 ? sn.data.dependsOn[0] : sn.data.dependsOn;
-      }
       if (sn.data.condition) {
         stageObj['condition'] = sn.data.condition;
+      }
+      // Derive dependsOn from incoming stage-to-stage edges so that drawing
+      // edges in the graph is the authoritative way to express stage ordering.
+      const stageDeps = _edges
+        .filter((e) => e.target === sn.id)
+        .map((e) => nodes.find((n) => n.id === e.source))
+        .filter((n): n is Node<GraphNodeData> => !!n && n.data.kind === 'stage');
+      if (stageDeps.length > 0) {
+        stageObj['dependsOn'] =
+          stageDeps.length === 1 ? stageDeps[0].data.rawId : stageDeps.map((n) => n.data.rawId);
       }
       const stagePool = sn.data.details?.['stagePool'] as string | undefined;
       if (stagePool) { stageObj['pool'] = { vmImage: stagePool }; }

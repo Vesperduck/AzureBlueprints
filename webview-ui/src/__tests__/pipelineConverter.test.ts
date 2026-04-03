@@ -642,12 +642,84 @@ jobs:
   it('serialises multiple dependsOn as an array', () => {
     const { nodes, edges } = pipelineToGraph(STAGES_YAML);
     const deployNode = nodes.find((n) => n.data.rawId === 'Deploy')!;
-    deployNode.data.dependsOn = ['Build', 'Test'];
-    const yaml = graphToPipeline(nodes, edges);
+    // Add a second upstream stage and a corresponding edge to express multi-dependsOn
+    const testStageNode: Node<GraphNodeData> = {
+      id: 'stage-test-extra',
+      type: 'stage',
+      position: { x: 0, y: 500 },
+      data: { kind: 'stage', label: 'Test', rawId: 'Test' },
+    };
+    const testToDeployEdge: Edge = {
+      id: 'stage-test-extra->deploy',
+      source: testStageNode.id,
+      target: deployNode.id,
+      animated: true,
+      style: {},
+    };
+    const updatedNodes = [...nodes, testStageNode];
+    const updatedEdges = [...edges, testToDeployEdge];
+    const yaml = graphToPipeline(updatedNodes, updatedEdges);
     const parsed = jsYaml.load(yaml) as { stages: Array<Record<string, unknown>> };
     const deploy = parsed.stages.find((s) => s['stage'] === 'Deploy')!;
     expect(Array.isArray(deploy['dependsOn'])).toBe(true);
-    expect(deploy['dependsOn']).toEqual(['Build', 'Test']);
+    expect((deploy['dependsOn'] as string[])).toContain('Build');
+    expect((deploy['dependsOn'] as string[])).toContain('Test');
+  });
+
+  // ── Stage dependency via edges ─────────────────────────────────────────────
+
+  it('stage with no incoming stage edges emits no dependsOn', () => {
+    const yaml = `stages:\n  - stage: OnlyStage\n    jobs:\n      - job: J\n        steps:\n          - script: echo hi`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    expect(parsed.stages[0]['dependsOn']).toBeUndefined();
+  });
+
+  it('round-trips single stage dependsOn string via edges', () => {
+    const { nodes, edges } = pipelineToGraph(STAGES_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const deploy = parsed.stages.find((s) => s['stage'] === 'Deploy')!;
+    expect(deploy['dependsOn']).toBe('Build');
+  });
+
+  it('drawing a new stage→stage edge adds dependsOn to YAML', () => {
+    // Build a graph with two independent stages (both connected to trigger)
+    const yaml = `
+stages:
+  - stage: StageA
+    jobs:
+      - job: J1
+        steps:
+          - script: echo a
+  - stage: StageB
+    jobs:
+      - job: J2
+        steps:
+          - script: echo b
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const stageA = nodes.find((n) => n.data.rawId === 'StageA')!;
+    const stageB = nodes.find((n) => n.data.rawId === 'StageB')!;
+    // Remove trigger→B and add A→B to express "StageB depends on StageA"
+    const newEdge: Edge = { id: 'a->b', source: stageA.id, target: stageB.id, animated: true, style: {} };
+    const updatedEdges = [...edges.filter((e) => e.target !== stageB.id), newEdge];
+    const out = graphToPipeline(nodes, updatedEdges);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const stageBOut = parsed.stages.find((s) => s['stage'] === 'StageB')!;
+    expect(stageBOut['dependsOn']).toBe('StageA');
+  });
+
+  it('removing a stage→stage edge removes dependsOn from YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGES_YAML);
+    const deployNode = nodes.find((n) => n.data.rawId === 'Deploy')!;
+    // Remove all edges going to Deploy (simulate user deleting the dependency edge)
+    const withoutDep = edges.filter((e) => e.target !== deployNode.id);
+    const out = graphToPipeline(nodes, withoutDep);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const deploy = parsed.stages.find((s) => s['stage'] === 'Deploy')!;
+    expect(deploy['dependsOn']).toBeUndefined();
   });
 
   // ── Edge removal regression ────────────────────────────────────────────────

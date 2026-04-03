@@ -152,8 +152,8 @@ export default function PropertiesPanel({
           />
         )}
 
-        {/* dependsOn – stage / job */}
-        {isStageOrJob && (
+        {/* dependsOn – job only (stage dependencies are expressed via graph edges) */}
+        {isJob && (
           <TextField
             id="pp-dependsOn"
             label="Depends On (comma-separated)"

@@ -37,6 +37,33 @@ const nodeTypes: NodeTypes = {
   download: TaskNode,
 };
 
+/**
+ * Ensures every stage node has at least one incoming edge. Any stage that has
+ * no incoming edges after an edge-removal operation gets a trigger→stage edge
+ * added back so the graph remains visually connected.
+ */
+function ensureStageConnectivity(
+  nodes: Node<GraphNodeData>[],
+  edges: Edge[]
+): Edge[] {
+  const triggerNode = nodes.find((n) => n.data.kind === 'trigger');
+  if (!triggerNode) { return edges; }
+  const extra: Edge[] = [];
+  for (const node of nodes) {
+    if (node.data.kind !== 'stage') { continue; }
+    if (!edges.some((e) => e.target === node.id)) {
+      extra.push({
+        id: `${triggerNode.id}->${node.id}`,
+        source: triggerNode.id,
+        target: node.id,
+        animated: true,
+        style: { stroke: '#0078d4', strokeWidth: 2 },
+      });
+    }
+  }
+  return extra.length > 0 ? [...edges, ...extra] : edges;
+}
+
 interface PipelineGraphProps {
   nodes: Node<GraphNodeData>[];
   edges: Edge[];
@@ -113,7 +140,12 @@ export default function PipelineGraph({
         if (deferredSync.current !== null) clearTimeout(deferredSync.current);
         deferredSync.current = setTimeout(() => {
           deferredSync.current = null;
-          onGraphChange(currentNodes.current, latestEdges.current);
+          const normalized = ensureStageConnectivity(currentNodes.current, latestEdges.current);
+          if (normalized !== latestEdges.current) {
+            latestEdges.current = normalized;
+            onEdgesChange(normalized);
+          }
+          onGraphChange(currentNodes.current, normalized);
         }, 0);
       }
     },
@@ -123,10 +155,26 @@ export default function PipelineGraph({
   const handleConnect = useCallback(
     (connection: Connection) => {
       connectCompleted.current = true;
-      // Remove any existing edge that already targets the same node so each
-      // node input has at most one incoming edge. Compare only on target id
-      // because converter-created edges don't have targetHandle set.
-      const withoutExisting = edges.filter((e) => e.target !== connection.target);
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+
+      let withoutExisting: Edge[];
+      if (targetNode?.data.kind === 'stage' && sourceNode?.data.kind === 'stage') {
+        // Stage-to-stage connections allow multiple incoming edges (multi-dependsOn).
+        // Remove trigger→target edges (stage deps replace them) and deduplicate
+        // the same source, but keep any existing stage→target edges from other sources.
+        withoutExisting = edges.filter((e) => {
+          if (e.target !== connection.target) { return true; }
+          const src = nodes.find((n) => n.id === e.source);
+          if (src?.data.kind === 'trigger') { return false; }
+          if (e.source === connection.source) { return false; } // dedup
+          return true;
+        });
+      } else {
+        // All other node types: enforce single incoming edge.
+        withoutExisting = edges.filter((e) => e.target !== connection.target);
+      }
+
       const updated = addEdge(
         { ...connection, animated: true, style: { stroke: '#0078d4' } },
         withoutExisting
@@ -231,8 +279,10 @@ export default function PipelineGraph({
   const handleEdgeUpdateEnd = useCallback(
     (_: MouseEvent | TouchEvent, edge: Edge) => {
       if (!edgeReconnected.current) {
-        // Dropped on empty space — remove the edge
-        const updated = edges.filter((e) => e.id !== edge.id);
+        // Dropped on empty space — remove the edge, then restore any trigger→stage
+        // edges for stages that would otherwise become disconnected.
+        let updated = edges.filter((e) => e.id !== edge.id);
+        updated = ensureStageConnectivity(nodes, updated);
         onEdgesChange(updated);
         onGraphChange(nodes, updated);
       }
