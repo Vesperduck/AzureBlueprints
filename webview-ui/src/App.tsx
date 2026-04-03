@@ -50,6 +50,10 @@ export default function App() {
   const edgesRef = useRef<typeof edges>([]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
 
+  // When a job→empty-space drag spawns the context menu, remember which job
+  // node the drag originated from so the inserted task gets wired to it.
+  const jobDragSourceRef = useRef<string | null>(null);
+
   // ── Listen for messages from the extension host ───────────────────────────
   useEffect(() => {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
@@ -132,10 +136,12 @@ export default function App() {
 
   const handleTaskSelect = useCallback((task: CatalogTask) => {
     setContextMenu(null);
+    const anchorNodeId = jobDragSourceRef.current ?? undefined;
+    jobDragSourceRef.current = null;
     const { nodes: n, edges: e } = insertTaskNode(
       nodesRef.current,
       edgesRef.current,
-      { taskName: task.name }
+      { taskName: task.name, anchorNodeId }
     );
     setNodes(n);
     setEdges(e);
@@ -153,6 +159,17 @@ export default function App() {
     setEdges(e);
     handleGraphChange(n, e);
   }, [handleGraphChange]);
+
+  // Called by PipelineGraph when the user drags an edge from a job and drops
+  // it on empty space — show the task catalog menu, remembering the source job.
+  const handleJobConnectEnd = useCallback(
+    (sourceNodeId: string, clientX: number, clientY: number) => {
+      jobDragSourceRef.current = sourceNodeId;
+      setContextMenu({ x: clientX, y: clientY, loading: true, tasks: [] });
+      vscode.postMessage({ type: 'requestTaskCatalog' });
+    },
+    []
+  );
 
   // Derive the currently selected node from live `nodes` state so the
   // PropertiesPanel never reads stale data after an edit
@@ -184,6 +201,7 @@ export default function App() {
           onGraphChange={handleGraphChange}
           onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
           onPaneContextMenu={handleContextMenu}
+          onJobConnectEnd={handleJobConnectEnd}
         />
         </ReactFlowProvider>
 
@@ -194,7 +212,7 @@ export default function App() {
             loading={contextMenu.loading}
             tasks={contextMenu.tasks}
             onSelect={handleTaskSelect}
-            onClose={() => setContextMenu(null)}
+            onClose={() => { jobDragSourceRef.current = null; setContextMenu(null); }}
           />
         )}
 

@@ -349,6 +349,8 @@ export function insertTriggerNode(
 export interface InsertTaskInput {
   /** YAML task reference, e.g. "DotNetCoreCLI@2" */
   taskName: string;
+  /** When provided, connect the new task to this node instead of auto-detecting the anchor. */
+  anchorNodeId?: string;
 }
 
 /**
@@ -384,7 +386,10 @@ export function insertTaskNode(
   const leafTasks = taskNodes.filter((n) => !taskSources.has(n.id));
 
   let anchorId: string | undefined;
-  if (leafTasks.length > 0) {
+  if (input.anchorNodeId) {
+    // Explicit anchor supplied — e.g. a specific job the user dragged from.
+    anchorId = input.anchorNodeId;
+  } else if (leafTasks.length > 0) {
     // Pick the leaf with the highest Y (last in the visual chain)
     anchorId = leafTasks.sort((a, b) => b.position.y - a.position.y)[0].id;
   } else {

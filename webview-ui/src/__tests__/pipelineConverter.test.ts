@@ -1316,6 +1316,26 @@ describe('insertTaskNode', () => {
     expect(result.nodes).toHaveLength(1);
     expect(result.edges).toHaveLength(0);
   });
+
+  it('wires new task to explicit anchorNodeId when provided', () => {
+    // Simulate drag-from-job: a graph with a stage + job, no tasks yet.
+    const yaml = `
+stages:
+  - stage: S
+    jobs:
+      - job: JobA
+        steps: []
+      - job: JobB
+        steps: []
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const jobA = nodes.find((n) => n.data.rawId === 'JobA')!;
+    const result = insertTaskNode(nodes, edges, { taskName: 'MyTask@1', anchorNodeId: jobA.id });
+    const newTask = result.nodes[result.nodes.length - 1];
+    const newEdge = result.edges.find((e) => e.target === newTask.id);
+    expect(newEdge).toBeDefined();
+    expect(newEdge!.source).toBe(jobA.id);
+  });
 });
 
 // ── insertTriggerNode ──────────────────────────────────────────────────────────────

@@ -112,6 +112,10 @@ interface PipelineGraphProps {
   onGraphChange: (nodes: Node<GraphNodeData>[], edges: Edge[]) => void;
   onNodeSelect: (node: Node<GraphNodeData> | null) => void;
   onPaneContextMenu?: (x: number, y: number) => void;
+  /** Called when the user drags an edge from a job node and drops it on empty
+   *  space. The host should show the task catalog at the given viewport coords
+   *  and, on selection, insert a task wired to `sourceNodeId`. */
+  onJobConnectEnd?: (sourceNodeId: string, clientX: number, clientY: number) => void;
 }
 
 export default function PipelineGraph({
@@ -122,6 +126,7 @@ export default function PipelineGraph({
   onGraphChange,
   onNodeSelect,
   onPaneContextMenu,
+  onJobConnectEnd,
 }: PipelineGraphProps) {
   // Refs kept synchronously up-to-date within the same JS tick.
   const currentNodes = useRef<Node<GraphNodeData>[]>(nodes);
@@ -251,15 +256,21 @@ export default function PipelineGraph({
   const handleConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent) => {
       // Only act when the drag ended without hitting a valid target handle
-      // AND the source was a trigger or stage node.
+      // AND the source was a trigger, stage, or job node.
       if (connectCompleted.current) { return; }
       const sourceKind = connectSource.current?.kind;
-      if (!connectSource.current || (sourceKind !== 'trigger' && sourceKind !== 'stage')) { return; }
+      if (!connectSource.current || (sourceKind !== 'trigger' && sourceKind !== 'stage' && sourceKind !== 'job')) { return; }
       const target = event.target as Element;
       if (!target.classList.contains('react-flow__pane')) { return; }
 
       const { clientX, clientY } =
         'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent);
+
+      // Job source → delegate to host so the task catalog menu can be shown.
+      if (sourceKind === 'job') {
+        onJobConnectEnd?.(connectSource.current.nodeId, clientX, clientY);
+        return;
+      }
 
       const position = project({ x: clientX, y: clientY });
       const isFromStage = sourceKind === 'stage';
@@ -287,7 +298,7 @@ export default function PipelineGraph({
       onEdgesChange(updatedEdges);
       onGraphChange(updatedNodes, updatedEdges);
     },
-    [project, onNodesChange, onEdgesChange, onGraphChange]
+    [project, onNodesChange, onEdgesChange, onGraphChange, onJobConnectEnd]
   );
 
   const handleNodeClick = useCallback(
