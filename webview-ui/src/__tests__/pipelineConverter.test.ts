@@ -1317,7 +1317,7 @@ describe('insertTaskNode', () => {
     expect(result.edges).toHaveLength(0);
   });
 
-  it('wires new task to explicit anchorNodeId when provided', () => {
+  it('wires new task to explicit anchorNodeId when provided (job anchor)', () => {
     // Simulate drag-from-job: a graph with a stage + job, no tasks yet.
     const yaml = `
 stages:
@@ -1335,6 +1335,19 @@ stages:
     const newEdge = result.edges.find((e) => e.target === newTask.id);
     expect(newEdge).toBeDefined();
     expect(newEdge!.source).toBe(jobA.id);
+  });
+
+  it('wires new task to explicit anchorNodeId when provided (task anchor — sequential drag)', () => {
+    // Simulate dragging an edge off an existing task to chain a new one after it.
+    const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const taskA = nodes.find((n) => n.data.rawId === 'A@1')!;
+    // Drag from A@1 (not the leaf) — anchor forces connection from A@1
+    const result = insertTaskNode(nodes, edges, { taskName: 'C@1', anchorNodeId: taskA.id });
+    const newTask = result.nodes[result.nodes.length - 1];
+    const newEdge = result.edges.find((e) => e.target === newTask.id);
+    expect(newEdge).toBeDefined();
+    expect(newEdge!.source).toBe(taskA.id);
   });
 });
 

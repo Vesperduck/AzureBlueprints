@@ -160,9 +160,9 @@ export default function App() {
     handleGraphChange(n, e);
   }, [handleGraphChange]);
 
-  // Called by PipelineGraph when the user drags an edge from a job and drops
-  // it on empty space — show the task catalog menu, remembering the source job.
-  const handleJobConnectEnd = useCallback(
+  // Called by PipelineGraph when the user drags an edge from a job or task and
+  // drops it on empty space — show the task catalog menu, remembering the source node.
+  const handleNodeConnectEnd = useCallback(
     (sourceNodeId: string, clientX: number, clientY: number) => {
       jobDragSourceRef.current = sourceNodeId;
       setContextMenu({ x: clientX, y: clientY, loading: true, tasks: [] });
@@ -201,7 +201,7 @@ export default function App() {
           onGraphChange={handleGraphChange}
           onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
           onPaneContextMenu={handleContextMenu}
-          onJobConnectEnd={handleJobConnectEnd}
+          onNodeConnectEnd={handleNodeConnectEnd}
         />
         </ReactFlowProvider>
 
