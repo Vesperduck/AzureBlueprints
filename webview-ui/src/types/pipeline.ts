@@ -107,7 +107,10 @@ export interface PipelineStage {
 }
 
 export interface PipelineTrigger {
+  batch?: boolean;
   branches?: { include?: string[]; exclude?: string[] };
+  paths?: { include?: string[]; exclude?: string[] };
+  tags?: { include?: string[]; exclude?: string[] };
 }
 
 export interface PipelineSchedule {

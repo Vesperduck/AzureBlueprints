@@ -12,6 +12,7 @@ import type {
   PipelineDeploymentJob,
   PipelineStep,
   PipelineSchedule,
+  PipelineTrigger,
   GraphNodeData,
   GraphNodeKind,
 } from './types/pipeline';
@@ -58,6 +59,16 @@ export function pipelineToGraph(yaml: string): {
     triggerDetails['branchesExclude'] = (s.branches?.exclude ?? []).join(', ');
     triggerDetails['always'] = s.always ?? false;
     triggerDetails['batch'] = s.batch ?? false;
+  }
+  if (triggerType === 'ci' && typeof pipeline.trigger === 'object' && pipeline.trigger !== null && !Array.isArray(pipeline.trigger)) {
+    const t = pipeline.trigger as PipelineTrigger;
+    triggerDetails['ciBatch'] = t.batch ?? false;
+    triggerDetails['branchesInclude'] = (t.branches?.include ?? []).join(', ');
+    triggerDetails['branchesExclude'] = (t.branches?.exclude ?? []).join(', ');
+    triggerDetails['pathsInclude'] = (t.paths?.include ?? []).join(', ');
+    triggerDetails['pathsExclude'] = (t.paths?.exclude ?? []).join(', ');
+    triggerDetails['tagsInclude'] = (t.tags?.include ?? []).join(', ');
+    triggerDetails['tagsExclude'] = (t.tags?.exclude ?? []).join(', ');
   }
   triggerNode.data.details = triggerDetails;
   nodes.push(triggerNode);
@@ -491,7 +502,32 @@ function buildTriggerYaml(
   details?: Record<string, unknown>
 ): Record<string, unknown> {
   switch (triggerType) {
-    case 'ci':   return { trigger: { branches: { include: ['main'] } } };
+    case 'ci': {
+      const trigger: PipelineTrigger = {};
+      if (details?.['ciBatch'] === true) { trigger.batch = true; }
+      const branchInc = splitList(details?.['branchesInclude'] as string | undefined);
+      const branchExc = splitList(details?.['branchesExclude'] as string | undefined);
+      if (branchInc.length > 0 || branchExc.length > 0) {
+        trigger.branches = {};
+        if (branchInc.length > 0) { trigger.branches.include = branchInc; }
+        if (branchExc.length > 0) { trigger.branches.exclude = branchExc; }
+      }
+      const pathInc = splitList(details?.['pathsInclude'] as string | undefined);
+      const pathExc = splitList(details?.['pathsExclude'] as string | undefined);
+      if (pathInc.length > 0 || pathExc.length > 0) {
+        trigger.paths = {};
+        if (pathInc.length > 0) { trigger.paths.include = pathInc; }
+        if (pathExc.length > 0) { trigger.paths.exclude = pathExc; }
+      }
+      const tagInc = splitList(details?.['tagsInclude'] as string | undefined);
+      const tagExc = splitList(details?.['tagsExclude'] as string | undefined);
+      if (tagInc.length > 0 || tagExc.length > 0) {
+        trigger.tags = {};
+        if (tagInc.length > 0) { trigger.tags.include = tagInc; }
+        if (tagExc.length > 0) { trigger.tags.exclude = tagExc; }
+      }
+      return { trigger };
+    }
     case 'pr':   return { pr: { branches: { include: ['main'] } } };
     case 'scheduled': {
       const schedule: PipelineSchedule = {

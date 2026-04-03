@@ -95,6 +95,7 @@ export default function PropertiesPanel({
   const isTrigger       = data.kind === 'trigger';
   const triggerType     = (data.details?.['triggerType'] as string | undefined) ?? 'none';
   const isScheduled     = isTrigger && triggerType === 'scheduled';
+  const isCi            = isTrigger && triggerType === 'ci';
   const poolValue       = (data.details?.['pool'] as string | undefined) ?? '';
   const taskName        = (data.details?.['taskName'] as string | undefined) ?? '';
 
@@ -203,6 +204,75 @@ export default function PropertiesPanel({
               rows={4}
             />
           </div>
+        )}
+
+        {/* ── CI trigger fields ────────────────────────────────────────── */}
+        {isCi && (
+          <>
+            <SectionDivider label="Branches" />
+
+            <TextField
+              id="pp-ci-branchesInclude"
+              label="Include (comma-separated)"
+              value={(data.details?.['branchesInclude'] as string | undefined) ?? ''}
+              placeholder="main, develop"
+              onChange={(v) => setDetail('branchesInclude', v)}
+            />
+
+            <TextField
+              id="pp-ci-branchesExclude"
+              label="Exclude (comma-separated)"
+              value={(data.details?.['branchesExclude'] as string | undefined) ?? ''}
+              placeholder="feature/*, hotfix/*"
+              onChange={(v) => setDetail('branchesExclude', v)}
+            />
+
+            <SectionDivider label="Paths" />
+
+            <TextField
+              id="pp-ci-pathsInclude"
+              label="Include (comma-separated)"
+              value={(data.details?.['pathsInclude'] as string | undefined) ?? ''}
+              placeholder="src/*, docs/*"
+              onChange={(v) => setDetail('pathsInclude', v)}
+            />
+
+            <TextField
+              id="pp-ci-pathsExclude"
+              label="Exclude (comma-separated)"
+              value={(data.details?.['pathsExclude'] as string | undefined) ?? ''}
+              placeholder="README.md"
+              onChange={(v) => setDetail('pathsExclude', v)}
+            />
+
+            <SectionDivider label="Tags" />
+
+            <TextField
+              id="pp-ci-tagsInclude"
+              label="Include (comma-separated)"
+              value={(data.details?.['tagsInclude'] as string | undefined) ?? ''}
+              placeholder="v1.*, release-*"
+              onChange={(v) => setDetail('tagsInclude', v)}
+            />
+
+            <TextField
+              id="pp-ci-tagsExclude"
+              label="Exclude (comma-separated)"
+              value={(data.details?.['tagsExclude'] as string | undefined) ?? ''}
+              placeholder="experimental-*"
+              onChange={(v) => setDetail('tagsExclude', v)}
+            />
+
+            <SectionDivider label="Options" />
+
+            <CheckboxField
+              id="pp-ci-batch"
+              label="Batch"
+              hint="batch changes while a build is running"
+              checked={(data.details?.['ciBatch'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('ciBatch', v)}
+            />
+          </>
         )}
 
         {/* ── Schedule trigger fields ───────────────────────────────────── */}

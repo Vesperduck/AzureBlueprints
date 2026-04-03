@@ -1091,3 +1091,141 @@ describe('insertTriggerNode', () => {
     expect(parsed).toHaveProperty('schedules');
   });
 });
+
+// ── CI trigger fields ─────────────────────────────────────────────────────────
+
+describe('ci trigger', () => {
+  const CI_YAML = `
+trigger:
+  batch: true
+  branches:
+    include:
+      - main
+      - develop
+    exclude:
+      - feature/*
+  paths:
+    include:
+      - src/*
+    exclude:
+      - README.md
+  tags:
+    include:
+      - v1.*
+    exclude:
+      - experimental-*
+`;
+
+  it('parses triggerType as ci', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['triggerType']).toBe('ci');
+  });
+
+  it('parses batch flag', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['ciBatch']).toBe(true);
+  });
+
+  it('parses branches include', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['branchesInclude']).toBe('main, develop');
+  });
+
+  it('parses branches exclude', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['branchesExclude']).toBe('feature/*');
+  });
+
+  it('parses paths include', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['pathsInclude']).toBe('src/*');
+  });
+
+  it('parses paths exclude', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['pathsExclude']).toBe('README.md');
+  });
+
+  it('parses tags include', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['tagsInclude']).toBe('v1.*');
+  });
+
+  it('parses tags exclude', () => {
+    const { nodes } = pipelineToGraph(CI_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['tagsExclude']).toBe('experimental-*');
+  });
+
+  it('round-trips batch flag', () => {
+    const { nodes, edges } = pipelineToGraph(CI_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect((parsed['trigger'] as Record<string, unknown>)['batch']).toBe(true);
+  });
+
+  it('round-trips branches include and exclude', () => {
+    const { nodes, edges } = pipelineToGraph(CI_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    const branches = (parsed['trigger'] as Record<string, unknown>)['branches'] as Record<string, unknown>;
+    expect(branches['include']).toEqual(['main', 'develop']);
+    expect(branches['exclude']).toEqual(['feature/*']);
+  });
+
+  it('round-trips paths include and exclude', () => {
+    const { nodes, edges } = pipelineToGraph(CI_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    const paths = (parsed['trigger'] as Record<string, unknown>)['paths'] as Record<string, unknown>;
+    expect(paths['include']).toEqual(['src/*']);
+    expect(paths['exclude']).toEqual(['README.md']);
+  });
+
+  it('round-trips tags include and exclude', () => {
+    const { nodes, edges } = pipelineToGraph(CI_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    const tags = (parsed['trigger'] as Record<string, unknown>)['tags'] as Record<string, unknown>;
+    expect(tags['include']).toEqual(['v1.*']);
+    expect(tags['exclude']).toEqual(['experimental-*']);
+  });
+
+  it('omits batch from YAML when false', () => {
+    const yaml = `trigger:\n  branches:\n    include:\n      - main`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    expect((parsed['trigger'] as Record<string, unknown>)['batch']).toBeUndefined();
+  });
+
+  it('omits paths from YAML when not specified', () => {
+    const yaml = `trigger:\n  branches:\n    include:\n      - main`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    expect((parsed['trigger'] as Record<string, unknown>)['paths']).toBeUndefined();
+  });
+
+  it('omits tags from YAML when not specified', () => {
+    const yaml = `trigger:\n  branches:\n    include:\n      - main`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    expect((parsed['trigger'] as Record<string, unknown>)['tags']).toBeUndefined();
+  });
+
+  it('produces empty trigger object when inserted fresh with no details', () => {
+    const { nodes, edges } = insertTriggerNode([], [], 'ci');
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('trigger');
+  });
+});
