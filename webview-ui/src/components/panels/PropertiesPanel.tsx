@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
+import * as jsYaml from 'js-yaml';
 import type { Node } from 'reactflow';
-import type { GraphNodeData } from '../../types/pipeline';
+import type { GraphNodeData, TaskInputDefinition } from '../../types/pipeline';
 import CronPicker from './CronPicker';
 import './PropertiesPanel.css';
 
@@ -102,12 +103,18 @@ interface PropertiesPanelProps {
   node: Node<GraphNodeData>;
   onDataChange: (nodeId: string, data: Partial<GraphNodeData>) => void;
   onClose: () => void;
+  /** Full input schema for the selected task (null = loading / unavailable). */
+  taskInputSchema?: TaskInputDefinition[] | null;
+  /** True while the schema is being fetched from the extension host. */
+  taskInputsLoading?: boolean;
 }
 
 export default function PropertiesPanel({
   node,
   onDataChange,
   onClose,
+  taskInputSchema,
+  taskInputsLoading,
 }: PropertiesPanelProps) {
   const { data } = node;
 
@@ -428,18 +435,123 @@ export default function PropertiesPanel({
               value={data.details?.['retryCountOnTaskFailure'] as number | undefined}
               onChange={(v) => setDetail('retryCountOnTaskFailure', v)}
             />
-            <SectionDivider label="Inputs (YAML)" />
-            <div className="props-row props-row--col">
-              <textarea
-                id="pp-task-inputs"
-                className="props-input props-textarea"
-                value={(data.details?.['inputsRaw'] as string | undefined) ?? ''}
-                placeholder={"command: restore\nprojects: '**/*.csproj'"}
-                onChange={(e) => setDetail('inputsRaw', e.target.value !== '' ? e.target.value : undefined)}
-                rows={4}
-                spellCheck={false}
-              />
-            </div>
+            <SectionDivider label="Inputs" />
+            {taskInputsLoading ? (
+              <div className="props-schema-loading">Loading input schema…</div>
+            ) : taskInputSchema && taskInputSchema.length > 0 ? (
+              // Render one field per input definition, grouped by groupName
+              (() => {
+                // Parse the current inputsRaw YAML into a plain object
+                let parsedInputs: Record<string, unknown> = {};
+                const rawStr = (data.details?.['inputsRaw'] as string | undefined) ?? '';
+                try {
+                  const v = jsYaml.load(rawStr);
+                  if (v && typeof v === 'object' && !Array.isArray(v)) {
+                    parsedInputs = v as Record<string, unknown>;
+                  }
+                } catch { /* keep empty */ }
+
+                // Update one input field and re-serialize to inputsRaw
+                const handleInputChange = (name: string, value: unknown) => {
+                  const updated: Record<string, unknown> = { ...parsedInputs };
+                  if (value === '' || value === undefined) {
+                    delete updated[name];
+                  } else {
+                    updated[name] = value;
+                  }
+                  const newRaw = Object.keys(updated).length > 0
+                    ? jsYaml.dump(updated, { lineWidth: 120 }).trim()
+                    : undefined;
+                  setDetail('inputsRaw', newRaw);
+                };
+
+                let lastGroup: string | undefined;
+                return (
+                  <>
+                    {taskInputSchema.map((input) => {
+                      const currentVal = parsedInputs[input.name];
+                      const displayVal = currentVal !== undefined ? String(currentVal) : '';
+                      const showDivider = input.groupName !== undefined && input.groupName !== lastGroup;
+                      lastGroup = input.groupName;
+                      const inputType = input.type.toLowerCase();
+
+                      return (
+                        <React.Fragment key={input.name}>
+                          {showDivider && input.groupName && (
+                            <SectionDivider label={input.groupName} />
+                          )}
+                          {inputType === 'boolean' ? (
+                            <CheckboxField
+                              id={`pp-input-${input.name}`}
+                              label={input.label}
+                              hint={input.required ? 'required' : undefined}
+                              checked={currentVal === true || displayVal === 'true'}
+                              onChange={(v) => handleInputChange(input.name, v)}
+                            />
+                          ) : (inputType === 'picklist' || inputType === 'radio') && input.options ? (
+                            <div className="props-row props-row--col">
+                              <label className="props-label" htmlFor={`pp-input-${input.name}`}>
+                                {input.label}
+                                {input.required && <span className="props-hint"> — required</span>}
+                              </label>
+                              <select
+                                id={`pp-input-${input.name}`}
+                                className="props-input"
+                                value={displayVal || input.defaultValue}
+                                onChange={(e) => handleInputChange(input.name, e.target.value)}
+                              >
+                                {!input.required && <option value="">— default —</option>}
+                                {Object.entries(input.options).map(([val, lbl]) => (
+                                  <option key={val} value={val}>{lbl}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : inputType === 'multiline' ? (
+                            <div className="props-row props-row--col">
+                              <label className="props-label" htmlFor={`pp-input-${input.name}`}>
+                                {input.label}
+                                {input.required && <span className="props-hint"> — required</span>}
+                              </label>
+                              <textarea
+                                id={`pp-input-${input.name}`}
+                                className="props-input props-textarea"
+                                value={displayVal}
+                                placeholder={input.defaultValue}
+                                onChange={(e) => handleInputChange(input.name, e.target.value)}
+                                rows={3}
+                                spellCheck={false}
+                              />
+                            </div>
+                          ) : (
+                            // string, filePath, secureFile, url, and any unknown types
+                            <TextField
+                              id={`pp-input-${input.name}`}
+                              label={input.label + (input.required ? ' *' : '')}
+                              value={displayVal}
+                              placeholder={input.defaultValue}
+                              onChange={(v) => handleInputChange(input.name, v)}
+                            />
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </>
+                );
+              })()
+            ) : (
+              // Fallback: raw YAML textarea (schema unavailable or task has no inputs)
+              <div className="props-row props-row--col">
+                <textarea
+                  id="pp-task-inputs"
+                  className="props-input props-textarea"
+                  value={(data.details?.['inputsRaw'] as string | undefined) ?? ''}
+                  placeholder={"command: restore\nprojects: '**/*.csproj'"}
+                  onChange={(e) => setDetail('inputsRaw', e.target.value !== '' ? e.target.value : undefined)}
+                  rows={4}
+                  spellCheck={false}
+                />
+              </div>
+            )}
             <SectionDivider label="Environment Variables (YAML)" />
             <div className="props-row props-row--col">
               <textarea

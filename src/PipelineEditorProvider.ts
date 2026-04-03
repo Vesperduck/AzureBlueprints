@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { fetchTaskCatalog } from './taskCatalog';
+import { fetchTaskCatalog, findTaskInputs } from './taskCatalog';
 
 /**
  * Provides the Pipeline Graph Editor as a VS Code custom text editor.
@@ -106,6 +106,32 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
             }
             break;
           }
+
+          case 'requestTaskInputs': {
+            // Fetch the catalog (cached after first call), find inputs for the
+            // requested task reference (e.g. "DotNetCoreCLI@2"), and send back.
+            try {
+              await fetchTaskCatalog(); // ensures catalog is cached
+              const inputs = findTaskInputs(message.taskRef);
+              webviewPanel.webview.postMessage({
+                type: 'taskInputsReady',
+                taskRef: message.taskRef,
+                inputs,
+              });
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              // Send back empty inputs on failure rather than blocking the UI
+              webviewPanel.webview.postMessage({
+                type: 'taskInputsReady',
+                taskRef: message.taskRef,
+                inputs: [],
+              });
+              vscode.window.showWarningMessage(
+                `Pipeline Graph: Could not fetch inputs for ${message.taskRef} – ${msg}`
+              );
+            }
+            break;
+          }
         }
       }
     );
@@ -165,7 +191,8 @@ type WebviewMessage =
   | { type: 'edit'; yaml: string }
   | { type: 'showError'; text: string }
   | { type: 'showInfo'; text: string }
-  | { type: 'requestTaskCatalog' };
+  | { type: 'requestTaskCatalog' }
+  | { type: 'requestTaskInputs'; taskRef: string };
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

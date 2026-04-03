@@ -8,7 +8,7 @@
 
 import type { Edge, Node } from 'reactflow';
 import * as jsYaml from 'js-yaml';
-import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode } from '../pipelineConverter';
+import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, parseInputsRaw } from '../pipelineConverter';
 import type { GraphNodeData } from '../types/pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2170,5 +2170,31 @@ describe('step field round-trips', () => {
       const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
       expect(parsed.steps[0]['patterns']).toBe('**/*.zip');
     });
+  });
+});
+
+describe('parseInputsRaw', () => {
+  it('returns empty object for undefined', () => {
+    expect(parseInputsRaw(undefined)).toEqual({});
+  });
+
+  it('parses a YAML map into string-keyed pairs', () => {
+    const raw = 'command: restore\nprojects: "**/*.csproj"';
+    expect(parseInputsRaw(raw)).toEqual({ command: 'restore', projects: '**/*.csproj' });
+  });
+
+  it('coerces non-string values to strings', () => {
+    const raw = 'count: 42\nflag: true';
+    const result = parseInputsRaw(raw);
+    expect(result['count']).toBe('42');
+    expect(result['flag']).toBe('true');
+  });
+
+  it('returns empty object for malformed YAML', () => {
+    expect(parseInputsRaw(': invalid: {{{}')).toEqual({});
+  });
+
+  it('returns empty object for a YAML array (not a map)', () => {
+    expect(parseInputsRaw('- item1\n- item2')).toEqual({});
   });
 });

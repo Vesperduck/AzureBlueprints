@@ -15,6 +15,7 @@ A Visual Studio Code extension that renders Azure DevOps YAML pipelines as inter
 - **Schedule trigger properties** — Scheduled trigger nodes expose the cron expression, schedule name, Branches (include/exclude), Always, and Batch fields in the Properties panel.
 - **PR trigger properties** — PR trigger nodes expose Branches (include/exclude), Paths (include/exclude), Auto Cancel, and Drafts in the Properties panel.
 - **Full task step editing** — Selecting a task node shows all editable fields for its step kind: task reference/inputs/env/retry count for `task:` steps; script content/working directory/env/fail-on-stderr for `script:`/`bash:`/`powershell:` steps (with a type selector); fetch depth/submodules/LFS/path/persistCredentials for `checkout:` steps; publish path and artifact for `publish:`; and download ref, artifact, path, and patterns for `download:` steps. All fields round-trip through the YAML converter.
+- **Task input schema** — When a `task:` node is selected, the extension fetches the task's input definitions from the Azure DevOps REST API (reusing the existing catalog fetch; no extra network call). The Properties panel renders structured fields (text inputs, checkboxes, dropdowns, textareas) grouped by `groupName`, replacing the raw YAML textarea. Input changes are round-tripped through `details.inputsRaw` so the YAML converter is unaffected. Schema results are cached per task ref for the session.
 
 ## Architecture
 
@@ -53,6 +54,12 @@ Returns the full Azure DevOps task catalog for the configured organisation. Resu
 ### `clearTaskCatalogCache(): void`
 Clears the in-memory task catalog cache, forcing the next `fetchTaskCatalog()` call to re-fetch.
 
+### `findTaskInputs(taskRef: string): TaskInputDefinition[]`
+Looks up the cached input schema for a task reference (e.g. `DotNetCoreCLI@2`). Returns an empty array if the catalog has not yet been fetched or the task was not found.
+
+### `parseInputsRaw(raw: string | undefined): Record<string, string>`
+Parses a YAML map string (the `inputsRaw` field stored on task nodes) into a plain `Record<string, string>`. All values are coerced to strings. Returns `{}` for `undefined`, malformed YAML, or YAML that is not a mapping.
+
 ## Getting Started
 
 ### Prerequisites
@@ -66,6 +73,10 @@ Clears the in-memory task catalog cache, forcing the next `fetchTaskCatalog()` c
 npm install
 npm run build
 ```
+
+## Changelog
+
+- 2026-04-07: Added task input schema — selecting a `task:` node now fetches structured input definitions from the Azure DevOps task catalog and renders them as typed form fields (text, checkbox, select, textarea) grouped by category in the Properties panel; 5 new tests for `parseInputsRaw` (221 total).
 
 Press **F5** in VS Code to launch the extension in a new Extension Development Host window.
 

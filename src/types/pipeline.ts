@@ -1,5 +1,21 @@
 // Azure DevOps Pipeline YAML type definitions
 
+/**
+ * Schema definition for a single input on an Azure DevOps pipeline task.
+ * Sourced from the /_apis/distributedtask/tasks ADO REST API.
+ */
+export interface TaskInputDefinition {
+  name: string;
+  type: string;
+  label: string;
+  defaultValue: string;
+  required: boolean;
+  helpMarkDown?: string;
+  groupName?: string;
+  options?: Record<string, string>;
+  visibleRule?: string;
+}
+
 export interface PipelineTrigger {
   branches?: {
     include?: string[];

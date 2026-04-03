@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
+import type { TaskInputDefinition } from './types/pipeline';
 
 // ── Public types ──────────────────────────────────────────────────────────────
+
+export type { TaskInputDefinition };
 
 export interface TaskCatalogItem {
   /** YAML reference used in pipeline files, e.g. "DotNetCoreCLI@2" */
@@ -8,6 +11,7 @@ export interface TaskCatalogItem {
   friendlyName: string;
   description: string;
   category: string;
+  inputs: TaskInputDefinition[];
 }
 
 // ── Simple per-session in-memory cache ────────────────────────────────────────
@@ -75,12 +79,45 @@ export async function fetchTaskCatalog(): Promise<TaskCatalogItem[]> {
       friendlyName: t.friendlyName ?? t.name,
       description: t.description ?? '',
       category: t.category ?? '',
+      inputs: (t.inputs ?? []).map((i) => ({
+        name: i.name,
+        type: i.type,
+        label: i.label,
+        defaultValue: i.defaultValue ?? '',
+        required: i.required ?? false,
+        helpMarkDown: i.helpMarkDown,
+        groupName: i.groupName,
+        options: i.options,
+        visibleRule: i.visibleRule,
+      })),
     }));
 
   return _cache;
 }
 
+/**
+ * Returns the input schema for a specific task reference (e.g. "DotNetCoreCLI@2").
+ * The catalog must already be cached (call fetchTaskCatalog first).
+ * Returns an empty array if the task is not found in the cache.
+ */
+export function findTaskInputs(taskRef: string): TaskInputDefinition[] {
+  if (!_cache) { return []; }
+  return _cache.find((t) => t.name === taskRef)?.inputs ?? [];
+}
+
 // ── ADO REST API shapes ───────────────────────────────────────────────────────
+
+interface AzureDoTaskInput {
+  name: string;
+  type: string;
+  label: string;
+  defaultValue?: string;
+  required?: boolean;
+  helpMarkDown?: string;
+  groupName?: string;
+  options?: Record<string, string>;
+  visibleRule?: string;
+}
 
 interface AzureDoTask {
   id: string;
@@ -89,6 +126,7 @@ interface AzureDoTask {
   friendlyName: string;
   description: string;
   category: string;
+  inputs?: AzureDoTaskInput[];
 }
 
 interface AzureDoTasksResponse {

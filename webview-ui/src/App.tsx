@@ -7,7 +7,7 @@ import ContextTaskMenu from './components/ContextTaskMenu';
 import ContextTriggerMenu from './components/ContextTriggerMenu';
 import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, type TriggerType } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
-import type { GraphNodeData, CatalogTask } from './types/pipeline';
+import type { GraphNodeData, CatalogTask, TaskInputDefinition } from './types/pipeline';
 import './App.css';
 
 const vscode = getVsCodeApi();
@@ -54,6 +54,12 @@ export default function App() {
   // node the drag originated from so the inserted task gets wired to it.
   const jobDragSourceRef = useRef<string | null>(null);
 
+  // ── Task input schema (fetched per task reference, cached in-session) ─────
+  const [taskInputSchema, setTaskInputSchema] = useState<TaskInputDefinition[] | null>(null);
+  const [taskInputsLoading, setTaskInputsLoading] = useState(false);
+  // Per-taskRef cache so we don't re-fetch the same schema twice
+  const taskInputsCacheRef = useRef<Map<string, TaskInputDefinition[]>>(new Map());
+
   // ── Listen for messages from the extension host ───────────────────────────
   useEffect(() => {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
@@ -86,6 +92,16 @@ export default function App() {
         setContextMenu((prev) =>
           prev ? { ...prev, loading: false, tasks: message.tasks } : null
         );
+      } else if (message.type === 'taskInputsReady') {
+        // Cache the schema and update the panel if this task is still selected.
+        const { taskRef, inputs } = message;
+        taskInputsCacheRef.current.set(taskRef, inputs);
+        const selNode = nodesRef.current.find((n) => n.id === selectedNodeIdRef.current);
+        const selTaskRef = selNode?.data.details?.['taskName'] as string | undefined;
+        if (selTaskRef === taskRef) {
+          setTaskInputSchema(inputs);
+          setTaskInputsLoading(false);
+        }
       }
     };
     window.addEventListener('message', handler);
@@ -93,6 +109,31 @@ export default function App() {
     vscode.postMessage({ type: 'ready' });
     return () => window.removeEventListener('message', handler);
   }, []);
+
+  // ── Fetch task input schema when a task node is selected ──────────────────
+  useEffect(() => {
+    const node = nodesRef.current.find((n) => n.id === selectedNodeId);
+    if (node?.data.kind !== 'task') {
+      setTaskInputSchema(null);
+      setTaskInputsLoading(false);
+      return;
+    }
+    const taskRef = (node.data.details?.['taskName'] as string | undefined) ?? '';
+    if (!taskRef) {
+      setTaskInputSchema(null);
+      setTaskInputsLoading(false);
+      return;
+    }
+    const cached = taskInputsCacheRef.current.get(taskRef);
+    if (cached) {
+      setTaskInputSchema(cached);
+      setTaskInputsLoading(false);
+    } else {
+      setTaskInputSchema(null);
+      setTaskInputsLoading(true);
+      vscode.postMessage({ type: 'requestTaskInputs', taskRef });
+    }
+  }, [selectedNodeId]);  // Intentionally excludes `nodes`: we only re-fetch on node selection change
 
   // ── Push graph changes back to the YAML document ─────────────────────────
   const handleGraphChange = useCallback(
@@ -230,6 +271,8 @@ export default function App() {
             node={selectedNode}
             onDataChange={handleNodeDataChange}
             onClose={() => setSelectedNodeId(null)}
+            taskInputSchema={taskInputSchema}
+            taskInputsLoading={taskInputsLoading}
           />
         )}
       </div>

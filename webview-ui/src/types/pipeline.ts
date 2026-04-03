@@ -211,3 +211,21 @@ export interface CatalogTask {
   friendlyName: string;
   category: string;
 }
+
+/**
+ * Schema definition for a single input on an Azure DevOps pipeline task.
+ * Sourced from the /_apis/distributedtask/tasks ADO REST API.
+ */
+export interface TaskInputDefinition {
+  name: string;
+  /** ADO input types: 'string' | 'boolean' | 'pickList' | 'multiLine' | 'filePath' | 'secureFile' | 'radio' | 'url' */
+  type: string;
+  label: string;
+  defaultValue: string;
+  required: boolean;
+  helpMarkDown?: string;
+  groupName?: string;
+  /** Only for pickList/radio: maps option value → display label. */
+  options?: Record<string, string>;
+  visibleRule?: string;
+}

@@ -420,6 +420,31 @@ export function insertTaskNode(
   };
 }
 
+// ── Input parsing utility ─────────────────────────────────────────────────────
+
+/**
+ * Parses a YAML-encoded task inputs string (as stored in `details.inputsRaw`)
+ * into a plain object of string-keyed values.  Non-string values are coerced
+ * to strings. Returns an empty object on malformed YAML or wrong type.
+ *
+ * Used by PropertiesPanel to hydrate individual input fields from the stored
+ * YAML blob, and by tests to verify round-trip fidelity.
+ */
+export function parseInputsRaw(raw: string | undefined): Record<string, string> {
+  if (!raw) { return {}; }
+  try {
+    const val = jsYaml.load(raw);
+    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      return Object.fromEntries(
+        Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, String(v)])
+      );
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
 // ── Graph → YAML ──────────────────────────────────────────────────────────────
 
 export function graphToPipeline(
