@@ -77,3 +77,4 @@ npm run test:coverage
 - 2026-04-02: Initial README generated from codebase.
 - 2026-04-02: Fixed double-delete bug in PipelineGraph — node deletions now correctly sync the YAML in one keypress for both isolated nodes and nodes with connected edges.
 - 2026-04-02: Fixed node deletion not immediately updating YAML — ReactFlow fires `onEdgesChange` before `onNodesChange` during deletion; edge removals now defer their `onGraphChange` call so `handleNodesChange` can cancel it and write the YAML once with both correct nodes and edges.
+- 2026-04-03: Enforced single-input-edge constraint — connecting or re-routing an edge to a node that already has an incoming connection now replaces the old edge instead of creating a duplicate.

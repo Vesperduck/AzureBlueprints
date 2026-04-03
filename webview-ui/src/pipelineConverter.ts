@@ -44,7 +44,9 @@ export function pipelineToGraph(yaml: string): {
   // ── Trigger node ────────────────────────────────────────────────────────────
   const triggerId = nextId('trigger');
   const triggerLabel = describeTrigger(pipeline);
-  nodes.push(makeNode(triggerId, 'trigger', triggerLabel, triggerLabel, triggerId, { x: STAGE_X - COL_W, y: 0 }));
+  const triggerNode = makeNode(triggerId, 'trigger', triggerLabel, triggerLabel, triggerId, { x: STAGE_X - COL_W, y: 0 });
+  triggerNode.data.details = { triggerType: getTriggerType(pipeline) };
+  nodes.push(triggerNode);
 
   // ── Stages pipeline ──────────────────────────────────────────────────────────
   if (pipeline.stages && pipeline.stages.length > 0) {
@@ -203,6 +205,52 @@ export function pipelineToGraph(yaml: string): {
   return { nodes, edges };
 }
 
+// ── Trigger type ──────────────────────────────────────────────────────────────
+
+export type TriggerType = 'ci' | 'pr' | 'scheduled' | 'manual' | 'none';
+
+export const TRIGGER_OPTIONS: { type: TriggerType; label: string; description: string }[] = [
+  { type: 'ci',        label: 'CI Trigger',          description: 'Runs on every push to main' },
+  { type: 'pr',        label: 'Pull Request Trigger', description: 'Runs on pull requests to main' },
+  { type: 'scheduled', label: 'Scheduled',            description: 'Runs on a cron schedule (nightly)' },
+  { type: 'manual',    label: 'Manual only',          description: 'Disables automatic triggers' },
+  { type: 'none',      label: 'No trigger',           description: 'Omits the trigger field entirely' },
+];
+
+/**
+ * Adds a trigger node to the graph (or replaces the existing one) with the
+ * given trigger type, then returns updated nodes + edges.
+ */
+export function insertTriggerNode(
+  currentNodes: Node<GraphNodeData>[],
+  currentEdges: Edge[],
+  triggerType: TriggerType
+): { nodes: Node<GraphNodeData>[]; edges: Edge[] } {
+  const label = TRIGGER_OPTIONS.find((o) => o.type === triggerType)?.label ?? triggerType;
+
+  // Replace any existing trigger node in-place; otherwise prepend.
+  const existingIdx = currentNodes.findIndex((n) => n.data.kind === 'trigger');
+  const newNode: Node<GraphNodeData> = {
+    id: existingIdx >= 0 ? currentNodes[existingIdx].id : `trigger-${Date.now()}`,
+    type: 'trigger',
+    position: existingIdx >= 0
+      ? currentNodes[existingIdx].position
+      : { x: STAGE_X - COL_W, y: 0 },
+    data: {
+      kind: 'trigger',
+      label,
+      rawId: 'trigger',
+      details: { triggerType },
+    },
+  };
+
+  const updatedNodes = existingIdx >= 0
+    ? currentNodes.map((n, i) => (i === existingIdx ? newNode : n))
+    : [newNode, ...currentNodes];
+
+  return { nodes: updatedNodes, edges: currentEdges };
+}
+
 // ── Insert task node ──────────────────────────────────────────────────────────
 
 export interface InsertTaskInput {
@@ -299,6 +347,11 @@ export function graphToPipeline(
     childMap.set(edge.source, list);
   }
 
+  // ── Trigger ───────────────────────────────────────────────────────────────
+  const triggerNode = nodes.find((n) => n.data.kind === 'trigger');
+  const triggerType = (triggerNode?.data.details?.['triggerType'] as string | undefined) ?? 'none';
+  const triggerYaml = buildTriggerYaml(triggerType);
+
   // ── Stages ────────────────────────────────────────────────────────────────
   if (stageNodes.length > 0) {
     const stages = stageNodes.map((sn) => {
@@ -327,22 +380,22 @@ export function graphToPipeline(
       return stageObj;
     });
 
-    return jsYaml.dump({ stages }, { lineWidth: 120, noRefs: true });
+    return jsYaml.dump({ ...triggerYaml, stages }, { lineWidth: 120, noRefs: true });
   }
 
   // ── Jobs only ─────────────────────────────────────────────────────────────
   if (jobNodes.length > 0) {
     const jobs = jobNodes.map((jn) => buildJobObject(jn, childMap, taskNodes));
-    return jsYaml.dump({ jobs }, { lineWidth: 120, noRefs: true });
+    return jsYaml.dump({ ...triggerYaml, jobs }, { lineWidth: 120, noRefs: true });
   }
 
   // ── Steps only ────────────────────────────────────────────────────────────
   if (taskNodes.length > 0) {
     const steps = taskNodes.map((tn) => buildStepObject(tn));
-    return jsYaml.dump({ steps }, { lineWidth: 120, noRefs: true });
+    return jsYaml.dump({ ...triggerYaml, steps }, { lineWidth: 120, noRefs: true });
   }
 
-  return jsYaml.dump({}, { lineWidth: 120 });
+  return jsYaml.dump({ ...triggerYaml }, { lineWidth: 120 });
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
@@ -403,6 +456,26 @@ function describeTrigger(pipeline: Pipeline): string {
     return `branches: ${t.branches.include.join(', ')}`;
   }
   return 'CI trigger';
+}
+
+/** Returns a canonical trigger type string stored on the trigger node. */
+function getTriggerType(pipeline: Pipeline): TriggerType {
+  const t = pipeline.trigger;
+  if (!t) { return 'none'; }
+  if (t === 'none') { return 'none'; }
+  return 'ci';
+}
+
+/** Produces the trigger YAML fragment to merge into the top-level document. */
+function buildTriggerYaml(triggerType: string): Record<string, unknown> {
+  switch (triggerType) {
+    case 'ci':        return { trigger: { branches: { include: ['main'] } } };
+    case 'pr':        return { pr: { branches: { include: ['main'] } } };
+    case 'scheduled': return { schedules: [{ cron: '0 0 * * *', displayName: 'Nightly', branches: { include: ['main'] }, always: true }] };
+    case 'manual':    return { trigger: 'none' };
+    case 'none':
+    default:          return {};
+  }
 }
 
 function describeStep(step: PipelineStep): {

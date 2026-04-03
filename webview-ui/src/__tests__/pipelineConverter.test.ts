@@ -8,7 +8,7 @@
 
 import type { Edge, Node } from 'reactflow';
 import * as jsYaml from 'js-yaml';
-import { pipelineToGraph, graphToPipeline, insertTaskNode } from '../pipelineConverter';
+import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode } from '../pipelineConverter';
 import type { GraphNodeData } from '../types/pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -875,5 +875,89 @@ describe('insertTaskNode', () => {
     const result = insertTaskNode([], [], { taskName: 'Standalone@1' });
     expect(result.nodes).toHaveLength(1);
     expect(result.edges).toHaveLength(0);
+  });
+});
+
+// ── insertTriggerNode ──────────────────────────────────────────────────────────────
+
+describe('insertTriggerNode', () => {
+  it('adds a trigger node to an empty graph', () => {
+    const result = insertTriggerNode([], [], 'ci');
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].data.kind).toBe('trigger');
+  });
+
+  it('stores the triggerType in node details', () => {
+    const result = insertTriggerNode([], [], 'pr');
+    expect(result.nodes[0].data.details?.['triggerType']).toBe('pr');
+  });
+
+  it('sets the label to the human-readable option label', () => {
+    const result = insertTriggerNode([], [], 'scheduled');
+    expect(result.nodes[0].data.label).toBe('Scheduled');
+  });
+
+  it('does not add edges when inserting into an empty graph', () => {
+    const result = insertTriggerNode([], [], 'ci');
+    expect(result.edges).toHaveLength(0);
+  });
+
+  it('replaces an existing trigger node (same id, updated details)', () => {
+    const { nodes, edges } = pipelineToGraph('trigger: none');
+    const originalId = nodes.find((n) => n.data.kind === 'trigger')!.id;
+    const result = insertTriggerNode(nodes, edges, 'ci');
+    const triggerNodes = result.nodes.filter((n) => n.data.kind === 'trigger');
+    expect(triggerNodes).toHaveLength(1);
+    expect(triggerNodes[0].id).toBe(originalId);
+    expect(triggerNodes[0].data.details?.['triggerType']).toBe('ci');
+  });
+
+  it('preserves existing non-trigger nodes when replacing', () => {
+    const yaml = `trigger: none\njobs:\n  - job: MyJob\n    steps:\n      - script: echo hi`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const result = insertTriggerNode(nodes, edges, 'pr');
+    expect(result.nodes.filter((n) => n.data.kind === 'job')).toHaveLength(1);
+  });
+
+  it('preserves all edges when replacing the trigger', () => {
+    const yaml = `trigger: none\njobs:\n  - job: MyJob`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const result = insertTriggerNode(nodes, edges, 'ci');
+    expect(result.edges).toHaveLength(edges.length);
+  });
+
+  it('serialises ci trigger as trigger.branches in YAML', () => {
+    const result = insertTriggerNode([], [], 'ci');
+    const yaml = graphToPipeline(result.nodes, result.edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('trigger');
+  });
+
+  it('serialises manual trigger as trigger: none in YAML', () => {
+    const result = insertTriggerNode([], [], 'manual');
+    const yaml = graphToPipeline(result.nodes, result.edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed['trigger']).toBe('none');
+  });
+
+  it('serialises none type with no trigger key in YAML', () => {
+    const result = insertTriggerNode([], [], 'none');
+    const yaml = graphToPipeline(result.nodes, result.edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('trigger');
+  });
+
+  it('serialises pr trigger with pr key in YAML', () => {
+    const result = insertTriggerNode([], [], 'pr');
+    const yaml = graphToPipeline(result.nodes, result.edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('pr');
+  });
+
+  it('serialises scheduled trigger with schedules key in YAML', () => {
+    const result = insertTriggerNode([], [], 'scheduled');
+    const yaml = graphToPipeline(result.nodes, result.edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('schedules');
   });
 });

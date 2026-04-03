@@ -3,7 +3,8 @@ import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
 import PropertiesPanel from './components/panels/PropertiesPanel';
 import ContextTaskMenu from './components/ContextTaskMenu';
-import { pipelineToGraph, graphToPipeline, insertTaskNode } from './pipelineConverter';
+import ContextTriggerMenu from './components/ContextTriggerMenu';
+import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, type TriggerType } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
 import type { GraphNodeData, CatalogTask } from './types/pipeline';
 import './App.css';
@@ -23,6 +24,9 @@ export default function App() {
     loading: boolean;
     tasks: CatalogTask[];
   } | null>(null);
+
+  // Trigger creation menu — shown when there is no trigger node yet
+  const [triggerMenu, setTriggerMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Count of edit messages we've sent that haven't been echoed back yet.
   // Each sent edit increments this; each incoming update decrements and is
@@ -112,10 +116,17 @@ export default function App() {
     [nodes, edges, handleGraphChange]
   );
 
-  // ── Context menu on empty canvas — request task catalog from extension ───
+  // ── Context menu on empty canvas ───────────────────────────────────────────
+  // If there is no trigger yet: show the trigger creation menu.
+  // Otherwise: show the task catalog (existing behaviour).
   const handleContextMenu = useCallback((x: number, y: number) => {
-    setContextMenu({ x, y, loading: true, tasks: [] });
-    vscode.postMessage({ type: 'requestTaskCatalog' });
+    const hasTrigger = nodesRef.current.some((n) => n.data.kind === 'trigger');
+    if (!hasTrigger) {
+      setTriggerMenu({ x, y });
+    } else {
+      setContextMenu({ x, y, loading: true, tasks: [] });
+      vscode.postMessage({ type: 'requestTaskCatalog' });
+    }
   }, []);
 
   const handleTaskSelect = useCallback((task: CatalogTask) => {
@@ -124,6 +135,18 @@ export default function App() {
       nodesRef.current,
       edgesRef.current,
       { taskName: task.name }
+    );
+    setNodes(n);
+    setEdges(e);
+    handleGraphChange(n, e);
+  }, [handleGraphChange]);
+
+  const handleTriggerSelect = useCallback((triggerType: TriggerType) => {
+    setTriggerMenu(null);
+    const { nodes: n, edges: e } = insertTriggerNode(
+      nodesRef.current,
+      edgesRef.current,
+      triggerType
     );
     setNodes(n);
     setEdges(e);
@@ -169,6 +192,15 @@ export default function App() {
             tasks={contextMenu.tasks}
             onSelect={handleTaskSelect}
             onClose={() => setContextMenu(null)}
+          />
+        )}
+
+        {triggerMenu && (
+          <ContextTriggerMenu
+            x={triggerMenu.x}
+            y={triggerMenu.y}
+            onSelect={handleTriggerSelect}
+            onClose={() => setTriggerMenu(null)}
           />
         )}
 

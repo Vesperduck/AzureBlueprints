@@ -113,9 +113,13 @@ export default function PipelineGraph({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
+      // Remove any existing edge that already targets the same node so each
+      // node input has at most one incoming edge. Compare only on target id
+      // because converter-created edges don't have targetHandle set.
+      const withoutExisting = edges.filter((e) => e.target !== connection.target);
       const updated = addEdge(
         { ...connection, animated: true, style: { stroke: '#0078d4' } },
-        edges
+        withoutExisting
       );
       onEdgesChange(updated);
       onGraphChange(nodes, updated);
@@ -154,7 +158,12 @@ export default function PipelineGraph({
   const handleEdgeUpdate = useCallback(
     (oldEdge: Edge, newConnection: Connection) => {
       edgeReconnected.current = true;
-      const updated = updateEdge(oldEdge, newConnection, edges);
+      // Remove any edge already targeting the new destination (except the edge
+      // being moved itself) before handing off to updateEdge.
+      const withoutExisting = edges.filter(
+        (e) => e.id === oldEdge.id || e.target !== newConnection.target
+      );
+      const updated = updateEdge(oldEdge, newConnection, withoutExisting);
       onEdgesChange(updated);
       onGraphChange(nodes, updated);
     },
