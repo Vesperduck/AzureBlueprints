@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import type { Node } from 'reactflow';
 import type { GraphNodeData } from '../../types/pipeline';
+import CronPicker from './CronPicker';
 import './PropertiesPanel.css';
 
 // Helper to render a labelled text input row
@@ -340,11 +341,8 @@ export default function PropertiesPanel({
           <>
             <SectionDivider label="Schedule" />
 
-            <TextField
-              id="pp-cron"
-              label="Cron Expression"
-              value={(data.details?.['cron'] as string | undefined) ?? ''}
-              placeholder="0 0 * * *"
+            <CronPicker
+              value={(data.details?.['cron'] as string | undefined) ?? '0 0 * * *'}
               onChange={(v) => setDetail('cron', v)}
             />
 
