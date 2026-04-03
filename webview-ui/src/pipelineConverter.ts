@@ -98,6 +98,23 @@ export function pipelineToGraph(yaml: string): {
       stageNode.data.displayName = stageLabel;
       stageNode.data.condition = stage.condition;
       stageNode.data.dependsOn = normalizeDependsOn(stage.dependsOn);
+
+      // Store extended stage fields in details
+      const stageDetails: Record<string, unknown> = {};
+      if (stage.pool) { stageDetails['stagePool'] = describePool(stage.pool); }
+      if (stage.variables !== undefined) {
+        stageDetails['variablesRaw'] = jsYaml.dump(stage.variables, { lineWidth: 120 }).trim();
+      }
+      if (stage.lockBehavior) { stageDetails['lockBehavior'] = stage.lockBehavior; }
+      if (stage.trigger) { stageDetails['stageTrigger'] = stage.trigger; }
+      if (stage.isSkippable === false) { stageDetails['isSkippable'] = false; }
+      if (stage.templateContext !== undefined) {
+        stageDetails['templateContextRaw'] = jsYaml.dump(stage.templateContext, { lineWidth: 120 }).trim();
+      }
+      if (Object.keys(stageDetails).length > 0) {
+        stageNode.data.details = stageDetails;
+      }
+
       nodes.push(stageNode);
 
       // Connect trigger → first stage or stage → stage via dependsOn
@@ -408,6 +425,21 @@ export function graphToPipeline(
       }
       if (sn.data.condition) {
         stageObj['condition'] = sn.data.condition;
+      }
+      const stagePool = sn.data.details?.['stagePool'] as string | undefined;
+      if (stagePool) { stageObj['pool'] = { vmImage: stagePool }; }
+      const lockBehavior = sn.data.details?.['lockBehavior'] as string | undefined;
+      if (lockBehavior) { stageObj['lockBehavior'] = lockBehavior; }
+      const stageTrigger = sn.data.details?.['stageTrigger'] as string | undefined;
+      if (stageTrigger) { stageObj['trigger'] = stageTrigger; }
+      if (sn.data.details?.['isSkippable'] === false) { stageObj['isSkippable'] = false; }
+      const variablesRaw = sn.data.details?.['variablesRaw'] as string | undefined;
+      if (variablesRaw) {
+        try { stageObj['variables'] = jsYaml.load(variablesRaw); } catch { /* skip malformed */ }
+      }
+      const templateContextRaw = sn.data.details?.['templateContextRaw'] as string | undefined;
+      if (templateContextRaw) {
+        try { stageObj['templateContext'] = jsYaml.load(templateContextRaw); } catch { /* skip malformed */ }
       }
       if (jobs.length > 0) {
         stageObj['jobs'] = jobs;

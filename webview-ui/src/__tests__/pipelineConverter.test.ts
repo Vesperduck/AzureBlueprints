@@ -1363,3 +1363,139 @@ pr:
     expect(parsed).toHaveProperty('pr');
   });
 });
+
+// ── Stage extended fields ─────────────────────────────────────────────────────
+
+describe('stage extended fields', () => {
+  const STAGE_EXTENDED_YAML = `
+trigger:
+  branches:
+    include:
+      - main
+stages:
+  - stage: Build
+    displayName: Build Stage
+    pool:
+      vmImage: ubuntu-latest
+    lockBehavior: sequential
+    trigger: manual
+    isSkippable: false
+    variables:
+      myVar: hello
+      count: 42
+    templateContext:
+      key: value
+    jobs:
+      - job: BuildJob
+        steps:
+          - script: echo hi
+`;
+
+  it('parses stage pool into details.stagePool', () => {
+    const { nodes } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    expect(stage.data.details?.['stagePool']).toBe('ubuntu-latest');
+  });
+
+  it('parses lockBehavior into details', () => {
+    const { nodes } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    expect(stage.data.details?.['lockBehavior']).toBe('sequential');
+  });
+
+  it('parses stage trigger into details.stageTrigger', () => {
+    const { nodes } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    expect(stage.data.details?.['stageTrigger']).toBe('manual');
+  });
+
+  it('parses isSkippable: false into details', () => {
+    const { nodes } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    expect(stage.data.details?.['isSkippable']).toBe(false);
+  });
+
+  it('parses variables into details.variablesRaw as YAML string', () => {
+    const { nodes } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    const raw = stage.data.details?.['variablesRaw'] as string;
+    const parsed = jsYaml.load(raw) as Record<string, unknown>;
+    expect(parsed['myVar']).toBe('hello');
+    expect(parsed['count']).toBe(42);
+  });
+
+  it('parses templateContext into details.templateContextRaw as YAML string', () => {
+    const { nodes } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    const raw = stage.data.details?.['templateContextRaw'] as string;
+    const parsed = jsYaml.load(raw) as Record<string, unknown>;
+    expect(parsed['key']).toBe('value');
+  });
+
+  it('does not set details.isSkippable when value is default (true)', () => {
+    const yaml = `stages:\n  - stage: A\n    jobs:\n      - job: J\n        steps:\n          - script: echo hi`;
+    const { nodes } = pipelineToGraph(yaml);
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    expect(stage.data.details?.['isSkippable']).toBeUndefined();
+  });
+
+  it('round-trips pool to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    expect((stage['pool'] as Record<string, unknown>)['vmImage']).toBe('ubuntu-latest');
+  });
+
+  it('round-trips lockBehavior to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    expect(stage['lockBehavior']).toBe('sequential');
+  });
+
+  it('round-trips stage trigger to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    expect(stage['trigger']).toBe('manual');
+  });
+
+  it('round-trips isSkippable: false to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    expect(stage['isSkippable']).toBe(false);
+  });
+
+  it('round-trips variables to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    const vars = stage['variables'] as Record<string, unknown>;
+    expect(vars['myVar']).toBe('hello');
+    expect(vars['count']).toBe(42);
+  });
+
+  it('round-trips templateContext to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(STAGE_EXTENDED_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    const tc = stage['templateContext'] as Record<string, unknown>;
+    expect(tc['key']).toBe('value');
+  });
+
+  it('omits pool from YAML when not set', () => {
+    const yaml = `stages:\n  - stage: A\n    jobs:\n      - job: J\n        steps:\n          - script: echo hi`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    const stage = (parsed['stages'] as Record<string, unknown>[])[0];
+    expect(stage['pool']).toBeUndefined();
+  });
+});

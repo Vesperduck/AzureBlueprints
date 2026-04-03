@@ -104,6 +104,11 @@ export interface PipelineStage {
   condition?: string;
   jobs?: (PipelineJob | PipelineDeploymentJob)[];
   pool?: PipelinePool | string;
+  variables?: unknown;
+  lockBehavior?: 'sequential' | 'runLatest';
+  trigger?: 'manual' | 'automatic';
+  isSkippable?: boolean;
+  templateContext?: unknown;
 }
 
 export interface PipelineTrigger {

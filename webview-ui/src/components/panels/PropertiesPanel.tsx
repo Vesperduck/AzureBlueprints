@@ -91,6 +91,7 @@ export default function PropertiesPanel({
   );
 
   const isStageOrJob    = data.kind === 'stage' || data.kind === 'job';
+  const isStage         = data.kind === 'stage';
   const isJob           = data.kind === 'job';
   const isNotTrigger    = data.kind !== 'trigger';
   const isTrigger       = data.kind === 'trigger';
@@ -177,6 +178,85 @@ export default function PropertiesPanel({
             placeholder="ubuntu-latest"
             onChange={(v) => set({ details: { ...data.details, pool: v } })}
           />
+        )}
+
+        {/* ── Stage-specific fields ──────────────────────────────────── */}
+        {isStage && (
+          <>
+            <TextField
+              id="pp-stage-pool"
+              label="Pool / vmImage"
+              value={(data.details?.['stagePool'] as string | undefined) ?? ''}
+              placeholder="ubuntu-latest"
+              onChange={(v) => setDetail('stagePool', v !== '' ? v : undefined)}
+            />
+
+            <SectionDivider label="Stage Options" />
+
+            <div className="props-row props-row--col">
+              <label className="props-label" htmlFor="pp-stage-lockBehavior">Lock Behavior</label>
+              <select
+                id="pp-stage-lockBehavior"
+                className="props-input"
+                value={(data.details?.['lockBehavior'] as string | undefined) ?? ''}
+                onChange={(e) => setDetail('lockBehavior', e.target.value !== '' ? e.target.value : undefined)}
+              >
+                <option value="">default</option>
+                <option value="sequential">sequential</option>
+                <option value="runLatest">runLatest</option>
+              </select>
+            </div>
+
+            <div className="props-row props-row--col">
+              <label className="props-label" htmlFor="pp-stage-trigger">Stage Trigger</label>
+              <select
+                id="pp-stage-trigger"
+                className="props-input"
+                value={(data.details?.['stageTrigger'] as string | undefined) ?? ''}
+                onChange={(e) => setDetail('stageTrigger', e.target.value !== '' ? e.target.value : undefined)}
+              >
+                <option value="">default (automatic)</option>
+                <option value="automatic">automatic</option>
+                <option value="manual">manual</option>
+              </select>
+            </div>
+
+            <CheckboxField
+              id="pp-stage-isSkippable"
+              label="Is Skippable"
+              hint="allow this stage to be skipped"
+              checked={(data.details?.['isSkippable'] as boolean | undefined) ?? true}
+              onChange={(v) => setDetail('isSkippable', v)}
+            />
+
+            <SectionDivider label="Variables (YAML)" />
+
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-stage-variables"
+                className="props-input props-textarea"
+                value={(data.details?.['variablesRaw'] as string | undefined) ?? ''}
+                placeholder={'myVar: value\notherVar: 123'}
+                onChange={(e) => setDetail('variablesRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={4}
+                spellCheck={false}
+              />
+            </div>
+
+            <SectionDivider label="Template Context (YAML)" />
+
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-stage-templateContext"
+                className="props-input props-textarea"
+                value={(data.details?.['templateContextRaw'] as string | undefined) ?? ''}
+                placeholder={'key: value'}
+                onChange={(e) => setDetail('templateContextRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={3}
+                spellCheck={false}
+              />
+            </div>
+          </>
         )}
 
         {/* Enabled toggle – not trigger */}
