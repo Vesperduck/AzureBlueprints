@@ -11,6 +11,7 @@ import type {
   PipelineJob,
   PipelineDeploymentJob,
   PipelineStep,
+  PipelineSchedule,
   GraphNodeData,
   GraphNodeKind,
 } from './types/pipeline';
@@ -44,8 +45,21 @@ export function pipelineToGraph(yaml: string): {
   // ── Trigger node ────────────────────────────────────────────────────────────
   const triggerId = nextId('trigger');
   const triggerLabel = describeTrigger(pipeline);
+  const triggerType = getTriggerType(pipeline);
   const triggerNode = makeNode(triggerId, 'trigger', triggerLabel, triggerLabel, triggerId, { x: STAGE_X - COL_W, y: 0 });
-  triggerNode.data.details = { triggerType: getTriggerType(pipeline) };
+  const triggerDetails: Record<string, unknown> = { triggerType };
+  if (triggerType === 'scheduled' && pipeline.schedules && pipeline.schedules.length > 0) {
+    // Store the first schedule entry for editing. Multiple schedules are
+    // preserved verbatim in serialisation via the schedules array.
+    const s = pipeline.schedules[0];
+    triggerDetails['cron'] = s.cron;
+    triggerDetails['scheduleDisplayName'] = s.displayName ?? '';
+    triggerDetails['branchesInclude'] = (s.branches?.include ?? []).join(', ');
+    triggerDetails['branchesExclude'] = (s.branches?.exclude ?? []).join(', ');
+    triggerDetails['always'] = s.always ?? false;
+    triggerDetails['batch'] = s.batch ?? false;
+  }
+  triggerNode.data.details = triggerDetails;
   nodes.push(triggerNode);
 
   // ── Stages pipeline ──────────────────────────────────────────────────────────
@@ -350,7 +364,7 @@ export function graphToPipeline(
   // ── Trigger ───────────────────────────────────────────────────────────────
   const triggerNode = nodes.find((n) => n.data.kind === 'trigger');
   const triggerType = (triggerNode?.data.details?.['triggerType'] as string | undefined) ?? 'none';
-  const triggerYaml = buildTriggerYaml(triggerType);
+  const triggerYaml = buildTriggerYaml(triggerType, triggerNode?.data.details);
 
   // ── Stages ────────────────────────────────────────────────────────────────
   if (stageNodes.length > 0) {
@@ -448,6 +462,10 @@ function describePool(pool: unknown): string {
 }
 
 function describeTrigger(pipeline: Pipeline): string {
+  if (pipeline.schedules && pipeline.schedules.length > 0) {
+    const cron = pipeline.schedules[0].cron;
+    return `schedule: ${cron}`;
+  }
   const t = pipeline.trigger;
   if (!t) { return 'no trigger'; }
   if (t === 'none') { return 'none'; }
@@ -460,22 +478,47 @@ function describeTrigger(pipeline: Pipeline): string {
 
 /** Returns a canonical trigger type string stored on the trigger node. */
 function getTriggerType(pipeline: Pipeline): TriggerType {
+  if (pipeline.schedules && pipeline.schedules.length > 0) { return 'scheduled'; }
   const t = pipeline.trigger;
   if (!t) { return 'none'; }
-  if (t === 'none') { return 'none'; }
+  if (t === 'none') { return 'manual'; }
   return 'ci';
 }
 
 /** Produces the trigger YAML fragment to merge into the top-level document. */
-function buildTriggerYaml(triggerType: string): Record<string, unknown> {
+function buildTriggerYaml(
+  triggerType: string,
+  details?: Record<string, unknown>
+): Record<string, unknown> {
   switch (triggerType) {
-    case 'ci':        return { trigger: { branches: { include: ['main'] } } };
-    case 'pr':        return { pr: { branches: { include: ['main'] } } };
-    case 'scheduled': return { schedules: [{ cron: '0 0 * * *', displayName: 'Nightly', branches: { include: ['main'] }, always: true }] };
-    case 'manual':    return { trigger: 'none' };
+    case 'ci':   return { trigger: { branches: { include: ['main'] } } };
+    case 'pr':   return { pr: { branches: { include: ['main'] } } };
+    case 'scheduled': {
+      const schedule: PipelineSchedule = {
+        cron: (details?.['cron'] as string | undefined) || '0 0 * * *',
+      };
+      const dn = details?.['scheduleDisplayName'] as string | undefined;
+      if (dn) { schedule.displayName = dn; }
+      const inc = splitList(details?.['branchesInclude'] as string | undefined);
+      const exc = splitList(details?.['branchesExclude'] as string | undefined);
+      if (inc.length > 0 || exc.length > 0) {
+        schedule.branches = {};
+        if (inc.length > 0) { schedule.branches.include = inc; }
+        if (exc.length > 0) { schedule.branches.exclude = exc; }
+      }
+      if (details?.['always'] === true) { schedule.always = true; }
+      if (details?.['batch']  === true) { schedule.batch  = true; }
+      return { schedules: [schedule] };
+    }
+    case 'manual': return { trigger: 'none' };
     case 'none':
-    default:          return {};
+    default:       return {};
   }
+}
+
+function splitList(raw: string | undefined): string[] {
+  if (!raw) { return []; }
+  return raw.split(',').map((s) => s.trim()).filter((s) => s !== '');
 }
 
 function describeStep(step: PipelineStep): {

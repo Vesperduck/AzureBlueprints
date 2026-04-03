@@ -810,6 +810,136 @@ describe('displayName round-trip', () => {
   });
 });
 
+// ── Schedule trigger ──────────────────────────────────────────────────────────
+
+const SCHEDULE_YAML = `
+schedules:
+  - cron: '0 3 * * 1'
+    displayName: Weekly Monday
+    branches:
+      include:
+        - main
+        - develop
+      exclude:
+        - feature/*
+    always: true
+    batch: false
+`.trim();
+
+describe('schedule trigger', () => {
+  it('detects triggerType as "scheduled"', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['triggerType']).toBe('scheduled');
+  });
+
+  it('stores cron expression on trigger node details', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['cron']).toBe('0 3 * * 1');
+  });
+
+  it('stores scheduleDisplayName on trigger node details', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['scheduleDisplayName']).toBe('Weekly Monday');
+  });
+
+  it('stores branchesInclude as comma-separated string', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['branchesInclude']).toBe('main, develop');
+  });
+
+  it('stores branchesExclude as comma-separated string', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['branchesExclude']).toBe('feature/*');
+  });
+
+  it('stores always flag', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['always']).toBe(true);
+  });
+
+  it('stores batch flag', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['batch']).toBe(false);
+  });
+
+  it('sets trigger label to the cron string', () => {
+    const { nodes } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.label).toBe('schedule: 0 3 * * 1');
+  });
+
+  it('round-trips schedules: key into YAML', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('schedules');
+  });
+
+  it('round-trips cron value', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    expect(parsed.schedules[0]['cron']).toBe('0 3 * * 1');
+  });
+
+  it('round-trips displayName', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    expect(parsed.schedules[0]['displayName']).toBe('Weekly Monday');
+  });
+
+  it('round-trips branch include list', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    const branches = parsed.schedules[0]['branches'] as Record<string, unknown>;
+    expect(branches['include']).toEqual(['main', 'develop']);
+  });
+
+  it('round-trips branch exclude list', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    const branches = parsed.schedules[0]['branches'] as Record<string, unknown>;
+    expect(branches['exclude']).toEqual(['feature/*']);
+  });
+
+  it('round-trips always: true', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    expect(parsed.schedules[0]['always']).toBe(true);
+  });
+
+  it('omits branch keys when both include and exclude are empty', () => {
+    const { nodes, edges } = pipelineToGraph('schedules:\n  - cron: "0 0 * * *"');
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    expect(parsed.schedules[0]).not.toHaveProperty('branches');
+  });
+
+  it('editing cron in details round-trips the updated value', () => {
+    const { nodes, edges } = pipelineToGraph(SCHEDULE_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    const updatedNodes = nodes.map((n) =>
+      n.id === trigger.id
+        ? { ...n, data: { ...n.data, details: { ...n.data.details, cron: '0 6 * * *' } } }
+        : n
+    );
+    const yaml = graphToPipeline(updatedNodes, edges);
+    const parsed = jsYaml.load(yaml) as { schedules: Array<Record<string, unknown>> };
+    expect(parsed.schedules[0]['cron']).toBe('0 6 * * *');
+  });
+});
+
 // ── insertTaskNode ────────────────────────────────────────────────────────────
 
 describe('insertTaskNode', () => {

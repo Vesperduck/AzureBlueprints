@@ -32,6 +32,39 @@ function TextField({
   );
 }
 
+function CheckboxField({
+  id,
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}): React.ReactElement {
+  return (
+    <div className="props-row">
+      <input
+        id={id}
+        className="props-checkbox"
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <label className="props-label" htmlFor={id} style={{ opacity: 1, cursor: 'pointer' }}>
+        {label}{hint && <span className="props-hint"> — {hint}</span>}
+      </label>
+    </div>
+  );
+}
+
+function SectionDivider({ label }: { label: string }): React.ReactElement {
+  return <div className="props-section-label">{label}</div>;
+}
+
 interface PropertiesPanelProps {
   node: Node<GraphNodeData>;
   onDataChange: (nodeId: string, data: Partial<GraphNodeData>) => void;
@@ -50,11 +83,20 @@ export default function PropertiesPanel({
     [node.id, onDataChange]
   );
 
-  const isStageOrJob = data.kind === 'stage' || data.kind === 'job';
-  const isJob        = data.kind === 'job';
-  const isNotTrigger = data.kind !== 'trigger';
-  const poolValue    = (data.details?.['pool'] as string | undefined) ?? '';
-  const taskName     = (data.details?.['taskName'] as string | undefined) ?? '';
+  const setDetail = useCallback(
+    (key: string, value: unknown) =>
+      set({ details: { ...data.details, [key]: value } }),
+    [data.details, set]
+  );
+
+  const isStageOrJob    = data.kind === 'stage' || data.kind === 'job';
+  const isJob           = data.kind === 'job';
+  const isNotTrigger    = data.kind !== 'trigger';
+  const isTrigger       = data.kind === 'trigger';
+  const triggerType     = (data.details?.['triggerType'] as string | undefined) ?? 'none';
+  const isScheduled     = isTrigger && triggerType === 'scheduled';
+  const poolValue       = (data.details?.['pool'] as string | undefined) ?? '';
+  const taskName        = (data.details?.['taskName'] as string | undefined) ?? '';
 
   return (
     <aside className="props-panel">
@@ -69,16 +111,20 @@ export default function PropertiesPanel({
         {/* Kind badge */}
         <div className="props-row">
           <span className="props-label">Type</span>
-          <span className={`props-kind-badge props-kind--${data.kind}`}>{data.kind}</span>
+          <span className={`props-kind-badge props-kind--${data.kind}`}>
+            {isTrigger ? triggerType : data.kind}
+          </span>
         </div>
 
-        {/* Display name */}
-        <TextField
-          id="pp-displayName"
-          label="Display Name"
-          value={data.displayName ?? data.label}
-          onChange={(v) => set({ displayName: v, label: v })}
-        />
+        {/* Display name — non-trigger nodes only */}
+        {isNotTrigger && (
+          <TextField
+            id="pp-displayName"
+            label="Display Name"
+            value={data.displayName ?? data.label}
+            onChange={(v) => set({ displayName: v, label: v })}
+          />
+        )}
 
         {/* Raw ID – stage / job only */}
         {isStageOrJob && (
@@ -157,6 +203,65 @@ export default function PropertiesPanel({
               rows={4}
             />
           </div>
+        )}
+
+        {/* ── Schedule trigger fields ───────────────────────────────────── */}
+        {isScheduled && (
+          <>
+            <SectionDivider label="Schedule" />
+
+            <TextField
+              id="pp-cron"
+              label="Cron Expression"
+              value={(data.details?.['cron'] as string | undefined) ?? ''}
+              placeholder="0 0 * * *"
+              onChange={(v) => setDetail('cron', v)}
+            />
+
+            <TextField
+              id="pp-scheduleDisplayName"
+              label="Schedule Name"
+              value={(data.details?.['scheduleDisplayName'] as string | undefined) ?? ''}
+              placeholder="Nightly"
+              onChange={(v) => setDetail('scheduleDisplayName', v)}
+            />
+
+            <SectionDivider label="Branches" />
+
+            <TextField
+              id="pp-branchesInclude"
+              label="Include (comma-separated)"
+              value={(data.details?.['branchesInclude'] as string | undefined) ?? ''}
+              placeholder="main, develop"
+              onChange={(v) => setDetail('branchesInclude', v)}
+            />
+
+            <TextField
+              id="pp-branchesExclude"
+              label="Exclude (comma-separated)"
+              value={(data.details?.['branchesExclude'] as string | undefined) ?? ''}
+              placeholder="feature/*, hotfix/*"
+              onChange={(v) => setDetail('branchesExclude', v)}
+            />
+
+            <SectionDivider label="Options" />
+
+            <CheckboxField
+              id="pp-always"
+              label="Always"
+              hint="run even without source changes"
+              checked={(data.details?.['always'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('always', v)}
+            />
+
+            <CheckboxField
+              id="pp-batch"
+              label="Batch"
+              hint="skip if previous run in-progress"
+              checked={(data.details?.['batch'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('batch', v)}
+            />
+          </>
         )}
       </div>
     </aside>

@@ -137,3 +137,23 @@
 .props-kind--checkout { background: #79554833; color: #bcaaa4; }
 .props-kind--publish  { background: #ff8c0033; color: #ffcc80; }
 .props-kind--download { background: #00ced133; color: #80deea; }
+
+/* Trigger-type variants shown as badge text */
+.props-kind--ci        { background: #3b3bff33; color: #9999ff; }
+.props-kind--pr        { background: #7b2fff33; color: #ce93d8; }
+.props-kind--scheduled { background: #00ced133; color: #80deea; }
+.props-kind--manual    { background: #79554833; color: #bcaaa4; }
+.props-kind--none      { background: #44444433; color: #999; }
+
+/* ── Section divider ──────────────────────────────────────────────────────── */
+
+.props-section-label {
+  margin-top: 4px;
+  padding: 4px 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.5;
+  border-bottom: 1px solid var(--vscode-widget-border, #444);
+}

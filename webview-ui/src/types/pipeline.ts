@@ -110,9 +110,19 @@ export interface PipelineTrigger {
   branches?: { include?: string[]; exclude?: string[] };
 }
 
+export interface PipelineSchedule {
+  cron: string;
+  displayName?: string;
+  branches?: { include?: string[]; exclude?: string[] };
+  always?: boolean;
+  batch?: boolean;
+}
+
 export interface Pipeline {
   name?: string;
   trigger?: PipelineTrigger | 'none' | string[];
+  pr?: PipelineTrigger;
+  schedules?: PipelineSchedule[];
   stages?: PipelineStage[];
   jobs?: (PipelineJob | PipelineDeploymentJob)[];
   steps?: PipelineStep[];
