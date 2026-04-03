@@ -597,6 +597,78 @@ describe('graphToPipeline', () => {
     expect(job['pool']).toEqual({ vmImage: 'windows-latest' });
   });
 
+  // ── Extended job fields round-trips ────────────────────────────────────────
+
+  describe('extended job fields', () => {
+    function makeJobYaml(extra: string): string {
+      return `jobs:\n  - job: J\n    pool:\n      vmImage: ubuntu-latest\n${extra}\n    steps:\n      - script: echo hi`.trim();
+    }
+
+    it('round-trips timeoutInMinutes', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    timeoutInMinutes: 90'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect(parsed.jobs[0]['timeoutInMinutes']).toBe(90);
+    });
+
+    it('round-trips cancelTimeoutInMinutes', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    cancelTimeoutInMinutes: 3'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect(parsed.jobs[0]['cancelTimeoutInMinutes']).toBe(3);
+    });
+
+    it('round-trips continueOnError: true', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    continueOnError: true'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect(parsed.jobs[0]['continueOnError']).toBe(true);
+    });
+
+    it('does not emit continueOnError when false/unset', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml(''));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect(parsed.jobs[0]['continueOnError']).toBeUndefined();
+    });
+
+    it('round-trips container', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    container: mcr.microsoft.com/dotnet/sdk:8.0'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect(parsed.jobs[0]['container']).toBe('mcr.microsoft.com/dotnet/sdk:8.0');
+    });
+
+    it('round-trips workspace.clean', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    workspace:\n      clean: all'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect((parsed.jobs[0]['workspace'] as Record<string, unknown>)['clean']).toBe('all');
+    });
+
+    it('round-trips strategy.parallel', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    strategy:\n      parallel: 4'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect((parsed.jobs[0]['strategy'] as Record<string, unknown>)['parallel']).toBe(4);
+    });
+
+    it('round-trips variables (YAML map)', () => {
+      const { nodes, edges } = pipelineToGraph(makeJobYaml('    variables:\n      myVar: hello\n      count: 5'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect((parsed.jobs[0]['variables'] as Record<string, unknown>)['myVar']).toBe('hello');
+    });
+
+    it('round-trips deployment job environment', () => {
+      const yaml = `jobs:\n  - deployment: D\n    environment: production\n    pool:\n      vmImage: ubuntu-latest`.trim();
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+      expect(parsed.jobs[0]['environment']).toBe('production');
+    });
+  });
+
   // ── Sequential task chain serialisation ───────────────────────────────────
 
   it('[regression] all tasks in a sequential chain are preserved when serialising', () => {

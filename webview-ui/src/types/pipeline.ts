@@ -82,9 +82,16 @@ export interface PipelineJob {
   displayName?: string;
   dependsOn?: string | string[];
   condition?: string;
+  continueOnError?: boolean;
   pool?: PipelinePool | string;
+  variables?: unknown;
   steps?: PipelineStep[];
   timeoutInMinutes?: number;
+  cancelTimeoutInMinutes?: number;
+  container?: string;
+  workspace?: { clean?: 'outputs' | 'resources' | 'all' };
+  strategy?: { parallel?: number; maxParallel?: number };
+  templateContext?: unknown;
 }
 
 export interface PipelineDeploymentJob {
@@ -95,6 +102,8 @@ export interface PipelineDeploymentJob {
   pool?: PipelinePool | string;
   environment?: string;
   timeoutInMinutes?: number;
+  cancelTimeoutInMinutes?: number;
+  variables?: unknown;
 }
 
 export interface PipelineStage {

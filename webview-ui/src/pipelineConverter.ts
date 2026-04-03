@@ -150,11 +150,20 @@ export function pipelineToGraph(yaml: string): {
         });
         jobNode.data.displayName = jobLabel;
         jobNode.data.condition = job.condition;
+        jobNode.data.continueOnError = (job as PipelineJob).continueOnError;
         jobNode.data.dependsOn = normalizeDependsOn(job.dependsOn);
         jobNode.data.parentId = stageId;
         jobNode.data.details = {
           pool: describePool(job.pool),
           isDeployment,
+          timeoutInMinutes: job.timeoutInMinutes,
+          cancelTimeoutInMinutes: (job as PipelineJob).cancelTimeoutInMinutes,
+          variablesRaw: job.variables != null
+            ? jsYaml.dump(job.variables, { lineWidth: 120 }).trim() : undefined,
+          workspaceClean: (job as PipelineJob).workspace?.clean,
+          container: (job as PipelineJob).container,
+          environment: (job as PipelineDeploymentJob).environment,
+          strategyParallel: (job as PipelineJob).strategy?.parallel,
         };
         nodes.push(jobNode);
         // Connect via dependsOn edges if present, else connect to parent stage.
@@ -214,8 +223,20 @@ export function pipelineToGraph(yaml: string): {
         y: jobY,
       });
       jobNode.data.dependsOn = normalizeDependsOn(job.dependsOn);
+      jobNode.data.continueOnError = (job as PipelineJob).continueOnError;
       jobNode.data.parentId = triggerId;
-      jobNode.data.details = { pool: describePool(job.pool), isDeployment };
+      jobNode.data.details = {
+        pool: describePool(job.pool),
+        isDeployment,
+        timeoutInMinutes: job.timeoutInMinutes,
+        cancelTimeoutInMinutes: (job as PipelineJob).cancelTimeoutInMinutes,
+        variablesRaw: job.variables != null
+          ? jsYaml.dump(job.variables, { lineWidth: 120 }).trim() : undefined,
+        workspaceClean: (job as PipelineJob).workspace?.clean,
+        container: (job as PipelineJob).container,
+        environment: (job as PipelineDeploymentJob).environment,
+        strategyParallel: (job as PipelineJob).strategy?.parallel,
+      };
       nodes.push(jobNode);
       // Connect via dependsOn edges if present, else connect to trigger.
       const jobDepsOnly = normalizeDependsOn(job.dependsOn);
@@ -782,9 +803,32 @@ function buildJobObject(
   if (jn.data.condition) {
     jobObj['condition'] = jn.data.condition;
   }
+  if (jn.data.continueOnError === true) {
+    jobObj['continueOnError'] = true;
+  }
   const pool = jn.data.details?.pool as string | undefined;
   if (pool) {
     jobObj['pool'] = { vmImage: pool };
+  }
+  const timeoutInMinutes = jn.data.details?.['timeoutInMinutes'] as number | undefined;
+  if (timeoutInMinutes !== undefined) { jobObj['timeoutInMinutes'] = timeoutInMinutes; }
+  const cancelTimeoutInMinutes = jn.data.details?.['cancelTimeoutInMinutes'] as number | undefined;
+  if (cancelTimeoutInMinutes !== undefined) { jobObj['cancelTimeoutInMinutes'] = cancelTimeoutInMinutes; }
+  const container = jn.data.details?.['container'] as string | undefined;
+  if (container) { jobObj['container'] = container; }
+  const environment = jn.data.details?.['environment'] as string | undefined;
+  if (environment) { jobObj['environment'] = environment; }
+  const workspaceClean = jn.data.details?.['workspaceClean'] as string | undefined;
+  if (workspaceClean) { jobObj['workspace'] = { clean: workspaceClean }; }
+  const strategyParallel = jn.data.details?.['strategyParallel'] as number | undefined;
+  if (strategyParallel !== undefined && strategyParallel > 0) { jobObj['strategy'] = { parallel: strategyParallel }; }
+  const variablesRaw = jn.data.details?.['variablesRaw'] as string | undefined;
+  if (variablesRaw) {
+    try { jobObj['variables'] = jsYaml.load(variablesRaw); } catch { /* skip malformed */ }
+  }
+  const templateContextRaw = jn.data.details?.['templateContextRaw'] as string | undefined;
+  if (templateContextRaw) {
+    try { jobObj['templateContext'] = jsYaml.load(templateContextRaw); } catch { /* skip malformed */ }
   }
   if (steps.length > 0) {
     jobObj['steps'] = steps;

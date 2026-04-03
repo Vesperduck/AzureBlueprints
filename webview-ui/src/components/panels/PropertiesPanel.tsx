@@ -66,6 +66,38 @@ function SectionDivider({ label }: { label: string }): React.ReactElement {
   return <div className="props-section-label">{label}</div>;
 }
 
+function NumberField({
+  id,
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number | undefined;
+  placeholder?: string;
+  onChange: (v: number | undefined) => void;
+}): React.ReactElement {
+  return (
+    <div className="props-row props-row--col">
+      <label className="props-label" htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        className="props-input"
+        type="number"
+        min={0}
+        value={value ?? ''}
+        placeholder={placeholder}
+        onChange={(e) => {
+          const n = parseInt(e.target.value, 10);
+          onChange(isNaN(n) ? undefined : n);
+        }}
+      />
+    </div>
+  );
+}
+
 interface PropertiesPanelProps {
   node: Node<GraphNodeData>;
   onDataChange: (nodeId: string, data: Partial<GraphNodeData>) => void;
@@ -152,32 +184,112 @@ export default function PropertiesPanel({
           />
         )}
 
-        {/* dependsOn – job only (stage dependencies are expressed via graph edges) */}
+        {/* ── Job-specific fields ────────────────────────────────────── */}
         {isJob && (
-          <TextField
-            id="pp-dependsOn"
-            label="Depends On (comma-separated)"
-            value={(data.dependsOn ?? []).join(', ')}
-            placeholder="StageName, AnotherStage"
-            onChange={(v) =>
-              set({
-                dependsOn: v !== ''
-                  ? v.split(',').map((s) => s.trim()).filter((s) => s !== '')
-                  : [],
-              })
-            }
-          />
-        )}
+          <>
+            <TextField
+              id="pp-pool"
+              label="Pool / vmImage"
+              value={poolValue}
+              placeholder="ubuntu-latest"
+              onChange={(v) => setDetail('pool', v !== '' ? v : undefined)}
+            />
 
-        {/* Pool – job only */}
-        {isJob && (
-          <TextField
-            id="pp-pool"
-            label="Pool / vmImage"
-            value={poolValue}
-            placeholder="ubuntu-latest"
-            onChange={(v) => set({ details: { ...data.details, pool: v } })}
-          />
+            <TextField
+              id="pp-job-container"
+              label="Container"
+              value={(data.details?.['container'] as string | undefined) ?? ''}
+              placeholder="mcr.microsoft.com/dotnet/sdk:8.0"
+              onChange={(v) => setDetail('container', v !== '' ? v : undefined)}
+            />
+
+            <TextField
+              id="pp-job-environment"
+              label="Environment (deployment)"
+              value={(data.details?.['environment'] as string | undefined) ?? ''}
+              placeholder="production"
+              onChange={(v) => setDetail('environment', v !== '' ? v : undefined)}
+            />
+
+            <SectionDivider label="Timeouts &amp; Strategy" />
+
+            <NumberField
+              id="pp-job-timeout"
+              label="Timeout (minutes)"
+              value={data.details?.['timeoutInMinutes'] as number | undefined}
+              placeholder="60"
+              onChange={(v) => setDetail('timeoutInMinutes', v)}
+            />
+
+            <NumberField
+              id="pp-job-cancelTimeout"
+              label="Cancel Timeout (minutes)"
+              value={data.details?.['cancelTimeoutInMinutes'] as number | undefined}
+              placeholder="5"
+              onChange={(v) => setDetail('cancelTimeoutInMinutes', v)}
+            />
+
+            <NumberField
+              id="pp-job-strategyParallel"
+              label="Parallel Strategy (count)"
+              value={data.details?.['strategyParallel'] as number | undefined}
+              placeholder="0"
+              onChange={(v) => setDetail('strategyParallel', v)}
+            />
+
+            <SectionDivider label="Options" />
+
+            <CheckboxField
+              id="pp-job-continueOnError"
+              label="Continue on Error"
+              hint="continue pipeline even if this job fails"
+              checked={data.continueOnError ?? false}
+              onChange={(v) => set({ continueOnError: v })}
+            />
+
+            <div className="props-row props-row--col">
+              <label className="props-label" htmlFor="pp-job-workspaceClean">Workspace Clean</label>
+              <select
+                id="pp-job-workspaceClean"
+                className="props-input"
+                value={(data.details?.['workspaceClean'] as string | undefined) ?? ''}
+                onChange={(e) => setDetail('workspaceClean', e.target.value !== '' ? e.target.value : undefined)}
+              >
+                <option value="">default</option>
+                <option value="outputs">outputs</option>
+                <option value="resources">resources</option>
+                <option value="all">all</option>
+              </select>
+            </div>
+
+            <SectionDivider label="Variables (YAML)" />
+
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-job-variables"
+                className="props-input props-textarea"
+                value={(data.details?.['variablesRaw'] as string | undefined) ?? ''}
+                placeholder={'myVar: value\notherVar: 123'}
+                onChange={(e) => setDetail('variablesRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={4}
+                spellCheck={false}
+              />
+            </div>
+
+            <SectionDivider label="Template Context (YAML)" />
+
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-job-templateContext"
+                className="props-input props-textarea"
+                value={(data.details?.['templateContextRaw'] as string | undefined) ?? ''}
+                placeholder={'key: value'}
+                onChange={(e) => setDetail('templateContextRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={3}
+                spellCheck={false}
+              />
+            </div>
+          </>
         )}
 
         {/* ── Stage-specific fields ──────────────────────────────────── */}
