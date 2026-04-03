@@ -96,6 +96,7 @@ export default function PropertiesPanel({
   const triggerType     = (data.details?.['triggerType'] as string | undefined) ?? 'none';
   const isScheduled     = isTrigger && triggerType === 'scheduled';
   const isCi            = isTrigger && triggerType === 'ci';
+  const isPr            = isTrigger && triggerType === 'pr';
   const poolValue       = (data.details?.['pool'] as string | undefined) ?? '';
   const taskName        = (data.details?.['taskName'] as string | undefined) ?? '';
 
@@ -204,6 +205,65 @@ export default function PropertiesPanel({
               rows={4}
             />
           </div>
+        )}
+
+        {/* ── PR trigger fields ─────────────────────────────────────────── */}
+        {isPr && (
+          <>
+            <SectionDivider label="Branches" />
+
+            <TextField
+              id="pp-pr-branchesInclude"
+              label="Include (comma-separated)"
+              value={(data.details?.['branchesInclude'] as string | undefined) ?? ''}
+              placeholder="main, develop"
+              onChange={(v) => setDetail('branchesInclude', v)}
+            />
+
+            <TextField
+              id="pp-pr-branchesExclude"
+              label="Exclude (comma-separated)"
+              value={(data.details?.['branchesExclude'] as string | undefined) ?? ''}
+              placeholder="feature/*, hotfix/*"
+              onChange={(v) => setDetail('branchesExclude', v)}
+            />
+
+            <SectionDivider label="Paths" />
+
+            <TextField
+              id="pp-pr-pathsInclude"
+              label="Include (comma-separated)"
+              value={(data.details?.['pathsInclude'] as string | undefined) ?? ''}
+              placeholder="src/*, docs/*"
+              onChange={(v) => setDetail('pathsInclude', v)}
+            />
+
+            <TextField
+              id="pp-pr-pathsExclude"
+              label="Exclude (comma-separated)"
+              value={(data.details?.['pathsExclude'] as string | undefined) ?? ''}
+              placeholder="README.md"
+              onChange={(v) => setDetail('pathsExclude', v)}
+            />
+
+            <SectionDivider label="Options" />
+
+            <CheckboxField
+              id="pp-pr-autoCancel"
+              label="Auto Cancel"
+              hint="cancel in-progress runs when new commits are pushed"
+              checked={(data.details?.['prAutoCancel'] as boolean | undefined) ?? true}
+              onChange={(v) => setDetail('prAutoCancel', v)}
+            />
+
+            <CheckboxField
+              id="pp-pr-drafts"
+              label="Drafts"
+              hint="trigger on draft pull requests"
+              checked={(data.details?.['prDrafts'] as boolean | undefined) ?? true}
+              onChange={(v) => setDetail('prDrafts', v)}
+            />
+          </>
         )}
 
         {/* ── CI trigger fields ────────────────────────────────────────── */}

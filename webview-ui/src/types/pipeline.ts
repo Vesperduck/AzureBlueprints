@@ -113,6 +113,13 @@ export interface PipelineTrigger {
   tags?: { include?: string[]; exclude?: string[] };
 }
 
+export interface PipelinePrTrigger {
+  autoCancel?: boolean;
+  drafts?: boolean;
+  branches?: { include?: string[]; exclude?: string[] };
+  paths?: { include?: string[]; exclude?: string[] };
+}
+
 export interface PipelineSchedule {
   cron: string;
   displayName?: string;
@@ -124,7 +131,7 @@ export interface PipelineSchedule {
 export interface Pipeline {
   name?: string;
   trigger?: PipelineTrigger | 'none' | string[];
-  pr?: PipelineTrigger;
+  pr?: PipelinePrTrigger;
   schedules?: PipelineSchedule[];
   stages?: PipelineStage[];
   jobs?: (PipelineJob | PipelineDeploymentJob)[];

@@ -1229,3 +1229,137 @@ trigger:
     expect(parsed).toHaveProperty('trigger');
   });
 });
+
+// ── PR trigger fields ─────────────────────────────────────────────────────────
+
+describe('pr trigger', () => {
+  const PR_YAML = `
+trigger: none
+pr:
+  autoCancel: false
+  drafts: false
+  branches:
+    include:
+      - main
+      - develop
+    exclude:
+      - feature/*
+  paths:
+    include:
+      - src/*
+    exclude:
+      - README.md
+`;
+
+  it('parses triggerType as pr', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['triggerType']).toBe('pr');
+  });
+
+  it('parses pr trigger without explicit trigger: none', () => {
+    const yaml = `pr:\n  branches:\n    include:\n      - main`;
+    const { nodes } = pipelineToGraph(yaml);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['triggerType']).toBe('pr');
+  });
+
+  it('parses autoCancel flag', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['prAutoCancel']).toBe(false);
+  });
+
+  it('parses drafts flag', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['prDrafts']).toBe(false);
+  });
+
+  it('parses branches include', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['branchesInclude']).toBe('main, develop');
+  });
+
+  it('parses branches exclude', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['branchesExclude']).toBe('feature/*');
+  });
+
+  it('parses paths include', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['pathsInclude']).toBe('src/*');
+  });
+
+  it('parses paths exclude', () => {
+    const { nodes } = pipelineToGraph(PR_YAML);
+    const trigger = nodes.find((n) => n.data.kind === 'trigger')!;
+    expect(trigger.data.details?.['pathsExclude']).toBe('README.md');
+  });
+
+  it('round-trips autoCancel: false to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(PR_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect((parsed['pr'] as Record<string, unknown>)['autoCancel']).toBe(false);
+  });
+
+  it('round-trips drafts: false to YAML', () => {
+    const { nodes, edges } = pipelineToGraph(PR_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect((parsed['pr'] as Record<string, unknown>)['drafts']).toBe(false);
+  });
+
+  it('round-trips branches include and exclude', () => {
+    const { nodes, edges } = pipelineToGraph(PR_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    const branches = (parsed['pr'] as Record<string, unknown>)['branches'] as Record<string, unknown>;
+    expect(branches['include']).toEqual(['main', 'develop']);
+    expect(branches['exclude']).toEqual(['feature/*']);
+  });
+
+  it('round-trips paths include and exclude', () => {
+    const { nodes, edges } = pipelineToGraph(PR_YAML);
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    const paths = (parsed['pr'] as Record<string, unknown>)['paths'] as Record<string, unknown>;
+    expect(paths['include']).toEqual(['src/*']);
+    expect(paths['exclude']).toEqual(['README.md']);
+  });
+
+  it('omits autoCancel from YAML when default (true)', () => {
+    const yaml = `pr:\n  branches:\n    include:\n      - main`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    expect((parsed['pr'] as Record<string, unknown>)['autoCancel']).toBeUndefined();
+  });
+
+  it('omits drafts from YAML when default (true)', () => {
+    const yaml = `pr:\n  branches:\n    include:\n      - main`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    expect((parsed['pr'] as Record<string, unknown>)['drafts']).toBeUndefined();
+  });
+
+  it('omits paths from YAML when not specified', () => {
+    const yaml = `pr:\n  branches:\n    include:\n      - main`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as Record<string, unknown>;
+    expect((parsed['pr'] as Record<string, unknown>)['paths']).toBeUndefined();
+  });
+
+  it('produces pr key in YAML when inserted fresh', () => {
+    const { nodes, edges } = insertTriggerNode([], [], 'pr');
+    const yaml = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(yaml) as Record<string, unknown>;
+    expect(parsed).toHaveProperty('pr');
+  });
+});

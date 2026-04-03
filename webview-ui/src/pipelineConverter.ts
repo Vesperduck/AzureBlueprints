@@ -13,6 +13,7 @@ import type {
   PipelineStep,
   PipelineSchedule,
   PipelineTrigger,
+  PipelinePrTrigger,
   GraphNodeData,
   GraphNodeKind,
 } from './types/pipeline';
@@ -69,6 +70,15 @@ export function pipelineToGraph(yaml: string): {
     triggerDetails['pathsExclude'] = (t.paths?.exclude ?? []).join(', ');
     triggerDetails['tagsInclude'] = (t.tags?.include ?? []).join(', ');
     triggerDetails['tagsExclude'] = (t.tags?.exclude ?? []).join(', ');
+  }
+  if (triggerType === 'pr' && pipeline.pr) {
+    const p = pipeline.pr as PipelinePrTrigger;
+    triggerDetails['prAutoCancel'] = p.autoCancel ?? true;
+    triggerDetails['prDrafts'] = p.drafts ?? true;
+    triggerDetails['branchesInclude'] = (p.branches?.include ?? []).join(', ');
+    triggerDetails['branchesExclude'] = (p.branches?.exclude ?? []).join(', ');
+    triggerDetails['pathsInclude'] = (p.paths?.include ?? []).join(', ');
+    triggerDetails['pathsExclude'] = (p.paths?.exclude ?? []).join(', ');
   }
   triggerNode.data.details = triggerDetails;
   nodes.push(triggerNode);
@@ -477,6 +487,11 @@ function describeTrigger(pipeline: Pipeline): string {
     const cron = pipeline.schedules[0].cron;
     return `schedule: ${cron}`;
   }
+  if (pipeline.pr) {
+    const p = pipeline.pr as PipelinePrTrigger;
+    if (p.branches?.include) { return `PR: ${p.branches.include.join(', ')}`; }
+    return 'PR trigger';
+  }
   const t = pipeline.trigger;
   if (!t) { return 'no trigger'; }
   if (t === 'none') { return 'none'; }
@@ -491,6 +506,8 @@ function describeTrigger(pipeline: Pipeline): string {
 function getTriggerType(pipeline: Pipeline): TriggerType {
   if (pipeline.schedules && pipeline.schedules.length > 0) { return 'scheduled'; }
   const t = pipeline.trigger;
+  // If trigger is absent or explicitly 'none' but a pr block exists, treat as PR trigger
+  if (pipeline.pr && (!t || t === 'none')) { return 'pr'; }
   if (!t) { return 'none'; }
   if (t === 'none') { return 'manual'; }
   return 'ci';
@@ -528,7 +545,26 @@ function buildTriggerYaml(
       }
       return { trigger };
     }
-    case 'pr':   return { pr: { branches: { include: ['main'] } } };
+    case 'pr': {
+      const pr: PipelinePrTrigger = {};
+      if (details?.['prAutoCancel'] === false) { pr.autoCancel = false; }
+      if (details?.['prDrafts'] === false) { pr.drafts = false; }
+      const branchInc = splitList(details?.['branchesInclude'] as string | undefined);
+      const branchExc = splitList(details?.['branchesExclude'] as string | undefined);
+      if (branchInc.length > 0 || branchExc.length > 0) {
+        pr.branches = {};
+        if (branchInc.length > 0) { pr.branches.include = branchInc; }
+        if (branchExc.length > 0) { pr.branches.exclude = branchExc; }
+      }
+      const pathInc = splitList(details?.['pathsInclude'] as string | undefined);
+      const pathExc = splitList(details?.['pathsExclude'] as string | undefined);
+      if (pathInc.length > 0 || pathExc.length > 0) {
+        pr.paths = {};
+        if (pathInc.length > 0) { pr.paths.include = pathInc; }
+        if (pathExc.length > 0) { pr.paths.exclude = pathExc; }
+      }
+      return { pr };
+    }
     case 'scheduled': {
       const schedule: PipelineSchedule = {
         cron: (details?.['cron'] as string | undefined) || '0 0 * * *',
