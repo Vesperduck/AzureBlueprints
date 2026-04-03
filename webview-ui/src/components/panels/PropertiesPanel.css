@@ -157,3 +157,36 @@
   opacity: 0.5;
   border-bottom: 1px solid var(--vscode-widget-border, #444);
 }
+
+/* ── Info box (manual trigger) ────────────────────────────────────────────── */
+
+.props-info-box {
+  margin: 4px 0;
+  padding: 8px 10px;
+  background: var(--vscode-textBlockQuote-background, rgba(255,255,255,0.06));
+  border-left: 3px solid var(--vscode-focusBorder, #0078d4);
+  border-radius: 2px;
+  font-size: 12px;
+  color: var(--vscode-foreground, #ccc);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.props-info-box strong {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+}
+
+.props-info-box p {
+  margin: 0;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.props-info-box code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+}

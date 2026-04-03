@@ -98,6 +98,7 @@ export default function PropertiesPanel({
   const isScheduled     = isTrigger && triggerType === 'scheduled';
   const isCi            = isTrigger && triggerType === 'ci';
   const isPr            = isTrigger && triggerType === 'pr';
+  const isManual        = isTrigger && triggerType === 'manual';
   const poolValue       = (data.details?.['pool'] as string | undefined) ?? '';
   const taskName        = (data.details?.['taskName'] as string | undefined) ?? '';
 
@@ -205,6 +206,21 @@ export default function PropertiesPanel({
               }
               rows={4}
             />
+          </div>
+        )}
+
+        {/* ── Manual trigger ───────────────────────────────────────────── */}
+        {isManual && (
+          <div className="props-info-box">
+            <strong>trigger: none</strong>
+            <p>
+              Automatic CI runs are disabled. The pipeline will only execute
+              when triggered manually from Azure DevOps or via the REST API.
+            </p>
+            <p>
+              To pass runtime inputs to manual runs, add a top-level{' '}
+              <code>parameters:</code> block to the YAML.
+            </p>
           </div>
         )}
 
