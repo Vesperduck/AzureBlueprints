@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ReactFlowProvider } from 'reactflow';
 import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
 import PropertiesPanel from './components/panels/PropertiesPanel';
@@ -174,6 +175,7 @@ export default function App() {
       </header>
 
       <div className="app-body">
+        <ReactFlowProvider>
         <PipelineGraph
           nodes={nodes}
           edges={edges}
@@ -183,6 +185,7 @@ export default function App() {
           onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
           onPaneContextMenu={handleContextMenu}
         />
+        </ReactFlowProvider>
 
         {contextMenu && (
           <ContextTaskMenu

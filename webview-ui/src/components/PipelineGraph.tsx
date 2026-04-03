@@ -6,6 +6,7 @@ import ReactFlow, {
   MiniMap,
   addEdge,
   updateEdge,
+  useReactFlow,
   applyEdgeChanges,
   applyNodeChanges,
   type Connection,
@@ -14,6 +15,7 @@ import ReactFlow, {
   type Node,
   type NodeChange,
   type NodeTypes,
+  type OnConnectStartParams,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './PipelineGraph.css';
@@ -59,6 +61,13 @@ export default function PipelineGraph({
   currentNodes.current = nodes;
   const latestEdges = useRef<Edge[]>(edges);
   latestEdges.current = edges;
+
+  const { project } = useReactFlow();
+
+  // Tracks the node that initiated the current connection drag.
+  const connectSource = useRef<{ nodeId: string; kind: string } | null>(null);
+  // Set to true by handleConnect when a drag lands on a valid target handle.
+  const connectCompleted = useRef(false);
 
   // When ReactFlow deletes a node it calls onEdgesChange FIRST (to remove
   // connected edges), then onNodesChange. To avoid writing the YAML with the
@@ -113,6 +122,7 @@ export default function PipelineGraph({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
+      connectCompleted.current = true;
       // Remove any existing edge that already targets the same node so each
       // node input has at most one incoming edge. Compare only on target id
       // because converter-created edges don't have targetHandle set.
@@ -125,6 +135,54 @@ export default function PipelineGraph({
       onGraphChange(nodes, updated);
     },
     [nodes, edges, onEdgesChange, onGraphChange]
+  );
+
+  const handleConnectStart = useCallback(
+    (_: React.MouseEvent | React.TouchEvent, params: OnConnectStartParams) => {
+      connectCompleted.current = false;
+      const { nodeId } = params;
+      if (!nodeId) { connectSource.current = null; return; }
+      const node = currentNodes.current.find((n) => n.id === nodeId);
+      connectSource.current = node ? { nodeId, kind: node.data.kind } : null;
+    },
+    []
+  );
+
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      // Only act when the drag ended without hitting a valid target handle
+      // AND the source was a trigger node.
+      if (connectCompleted.current) { return; }
+      if (!connectSource.current || connectSource.current.kind !== 'trigger') { return; }
+      const target = event.target as Element;
+      if (!target.classList.contains('react-flow__pane')) { return; }
+
+      const { clientX, clientY } =
+        'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent);
+
+      const position = project({ x: clientX, y: clientY });
+      const newId = `stage-${Date.now()}`;
+      const newNode: Node<GraphNodeData> = {
+        id: newId,
+        type: 'stage',
+        position,
+        data: { kind: 'stage', label: 'New Stage', rawId: 'NewStage' },
+      };
+      const newEdge: Edge = {
+        id: `e-${connectSource.current.nodeId}-${newId}`,
+        source: connectSource.current.nodeId,
+        target: newId,
+        animated: true,
+        style: { stroke: '#0078d4', strokeWidth: 2 },
+      };
+
+      const updatedNodes = [...currentNodes.current, newNode];
+      const updatedEdges = [...latestEdges.current, newEdge];
+      onNodesChange(updatedNodes);
+      onEdgesChange(updatedEdges);
+      onGraphChange(updatedNodes, updatedEdges);
+    },
+    [project, onNodesChange, onEdgesChange, onGraphChange]
   );
 
   const handleNodeClick = useCallback(
@@ -191,6 +249,8 @@ export default function PipelineGraph({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
+        onConnectStart={handleConnectStart}
+        onConnectEnd={handleConnectEnd}
         onEdgeUpdateStart={handleEdgeUpdateStart}
         onEdgeUpdate={handleEdgeUpdate}
         onEdgeUpdateEnd={handleEdgeUpdateEnd}
