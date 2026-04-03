@@ -184,7 +184,7 @@ export function pipelineToGraph(yaml: string): {
 
         for (const step of steps) {
           const taskId = nextId('task');
-          const { kind, label, taskName, displayName } = describeStep(step);
+          const { kind, label, displayName } = describeStep(step);
 
           const taskNode = makeNode(taskId, kind, label, label, taskId, {
             x: TASK_X,
@@ -192,7 +192,7 @@ export function pipelineToGraph(yaml: string): {
           });
           taskNode.data.condition = (step as { condition?: string }).condition;
           taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
-          taskNode.data.details = { taskName };
+          taskNode.data.details = buildTaskDetails(step);
           taskNode.data.displayName = displayName;
           taskNode.data.parentId = jobId;
           nodes.push(taskNode);
@@ -254,14 +254,14 @@ export function pipelineToGraph(yaml: string): {
       let prevTaskId: string = jobId;
       for (const step of steps) {
         const taskId = nextId('task');
-        const { kind, label, taskName, displayName } = describeStep(step);
+        const { kind, label, displayName } = describeStep(step);
         const taskNode = makeNode(taskId, kind, label, label, taskId, {
           x: TASK_X,
           y: taskY,
         });
         taskNode.data.condition = (step as { condition?: string }).condition;
         taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
-        taskNode.data.details = { taskName };
+        taskNode.data.details = buildTaskDetails(step);
         taskNode.data.displayName = displayName;
         taskNode.data.parentId = jobId;
         nodes.push(taskNode);
@@ -278,14 +278,14 @@ export function pipelineToGraph(yaml: string): {
     let prevTaskId: string = triggerId;
     for (const step of pipeline.steps) {
       const taskId = nextId('task');
-      const { kind, label, taskName, displayName } = describeStep(step);
+      const { kind, label, displayName } = describeStep(step);
       const taskNode = makeNode(taskId, kind, label, label, taskId, {
         x: TASK_X,
         y: taskY,
       });
       taskNode.data.condition = (step as { condition?: string }).condition;
       taskNode.data.enabled = (step as { enabled?: boolean }).enabled !== false;
-      taskNode.data.details = { taskName };
+      taskNode.data.details = buildTaskDetails(step);
       taskNode.data.displayName = displayName;
       taskNode.data.parentId = triggerId;
       nodes.push(taskNode);
@@ -759,6 +759,95 @@ function truncateScript(s: string, max = 40): string {
   return first.length > max ? first.slice(0, max) + '…' : first;
 }
 
+/** Extract all serialisable fields from a pipeline step into a details record. */
+function buildTaskDetails(step: PipelineStep): Record<string, unknown> {
+  // Common optional shared fields across most step types
+  const common = (s: { name?: string; continueOnError?: boolean; timeoutInMinutes?: number }) => ({
+    name: s.name,
+    continueOnError: s.continueOnError,
+    timeoutInMinutes: s.timeoutInMinutes,
+  });
+
+  if ('task' in step) {
+    const s = step as import('./types/pipeline').PipelineTaskStep;
+    return {
+      stepKind: 'task',
+      taskName: s.task,
+      ...common(s),
+      retryCountOnTaskFailure: s.retryCountOnTaskFailure,
+      inputsRaw: s.inputs != null ? jsYaml.dump(s.inputs, { lineWidth: 120 }).trim() : undefined,
+      envRaw: s.env != null ? jsYaml.dump(s.env, { lineWidth: 120 }).trim() : undefined,
+    };
+  }
+  if ('script' in step) {
+    const s = step as import('./types/pipeline').PipelineScriptStep;
+    return {
+      stepKind: 'script',
+      taskName: s.script,
+      ...common(s),
+      workingDirectory: s.workingDirectory,
+      failOnStderr: s.failOnStderr,
+      envRaw: s.env != null ? jsYaml.dump(s.env, { lineWidth: 120 }).trim() : undefined,
+    };
+  }
+  if ('bash' in step) {
+    const s = step as import('./types/pipeline').PipelineBashStep;
+    return {
+      stepKind: 'bash',
+      taskName: s.bash,
+      ...common(s),
+      workingDirectory: s.workingDirectory,
+      failOnStderr: s.failOnStderr,
+      envRaw: s.env != null ? jsYaml.dump(s.env, { lineWidth: 120 }).trim() : undefined,
+    };
+  }
+  if ('powershell' in step) {
+    const s = step as import('./types/pipeline').PipelinePowerShellStep;
+    return {
+      stepKind: 'powershell',
+      taskName: s.powershell,
+      ...common(s),
+      workingDirectory: s.workingDirectory,
+      failOnStderr: s.failOnStderr,
+      errorActionPreference: s.errorActionPreference,
+      ignoreLASTEXITCODE: s.ignoreLASTEXITCODE,
+      envRaw: s.env != null ? jsYaml.dump(s.env, { lineWidth: 120 }).trim() : undefined,
+    };
+  }
+  if ('checkout' in step) {
+    const s = step as import('./types/pipeline').PipelineCheckoutStep;
+    return {
+      stepKind: 'checkout',
+      taskName: s.checkout,
+      clean: s.clean,
+      fetchDepth: s.fetchDepth,
+      lfs: s.lfs,
+      submodules: s.submodules,
+      path: s.path,
+      persistCredentials: s.persistCredentials,
+    };
+  }
+  if ('publish' in step) {
+    const s = step as import('./types/pipeline').PipelinePublishStep;
+    return {
+      stepKind: 'publish',
+      taskName: s.publish,
+      artifact: s.artifact,
+    };
+  }
+  if ('download' in step) {
+    const s = step as import('./types/pipeline').PipelineDownloadStep;
+    return {
+      stepKind: 'download',
+      taskName: s.download,
+      artifact: s.artifact,
+      path: s.path,
+      patterns: s.patterns,
+    };
+  }
+  return { stepKind: 'task', taskName: '' };
+}
+
 function buildJobObject(
   jn: Node<GraphNodeData>,
   childMap: Map<string, string[]>,
@@ -842,32 +931,44 @@ function buildJobObject(
 }
 
 function buildStepObject(tn: Node<GraphNodeData>): Record<string, unknown> {
-  const taskName = tn.data.details?.taskName as string | undefined;
+  const d = tn.data.details ?? {};
+  const taskName = d['taskName'] as string | undefined;
+  const stepKind = d['stepKind'] as string | undefined;
   const step: Record<string, unknown> = {};
 
+  // Primary key — use stepKind to distinguish bash/powershell from script
   switch (tn.data.kind) {
     case 'task':
       step['task'] = taskName ?? tn.data.rawId;
       break;
     case 'script':
-      step['script'] = taskName ?? tn.data.label;
+      if (stepKind === 'bash') {
+        step['bash'] = taskName ?? tn.data.label;
+      } else if (stepKind === 'powershell') {
+        step['powershell'] = taskName ?? tn.data.label;
+      } else {
+        step['script'] = taskName ?? tn.data.label;
+      }
       break;
-    case 'checkout':
-      step['checkout'] = tn.data.rawId.replace(/^checkout:\s?/, '').trim() || 'self';
+    case 'checkout': {
+      const ref = (taskName ?? '').trim() || tn.data.rawId.replace(/^checkout:\s?/, '').trim() || 'self';
+      step['checkout'] = ref;
       break;
+    }
     case 'publish':
       step['publish'] = taskName ?? '.';
-      step['artifact'] = tn.data.rawId;
+      step['artifact'] = (d['artifact'] as string | undefined) ?? tn.data.rawId;
       break;
-    case 'download':
-      step['download'] = tn.data.rawId.replace(/^download:\s?/, '').trim() || 'current';
+    case 'download': {
+      const dlRef = (taskName ?? '').trim() || tn.data.rawId.replace(/^download:\s?/, '').trim() || 'current';
+      step['download'] = dlRef;
       break;
+    }
     default:
       step['task'] = tn.data.rawId;
   }
 
-  // Write displayName whenever present – comparing to label is wrong because
-  // label IS set from displayName during parsing, so they would always match.
+  // ── Shared optional metadata ───────────────────────────────────────────────
   if (tn.data.displayName) {
     step['displayName'] = tn.data.displayName;
   }
@@ -876,6 +977,88 @@ function buildStepObject(tn: Node<GraphNodeData>): Record<string, unknown> {
   }
   if (tn.data.enabled === false) {
     step['enabled'] = false;
+  }
+
+  // ── Step-kind-specific fields ─────────────────────────────────────────────
+
+  // name (step ID, used in dependsOn expressions)
+  const name = d['name'] as string | undefined;
+  if (name) { step['name'] = name; }
+
+  const continueOnError = d['continueOnError'] as boolean | undefined;
+  if (continueOnError === true) { step['continueOnError'] = true; }
+
+  const timeoutInMinutes = d['timeoutInMinutes'] as number | undefined;
+  if (timeoutInMinutes !== undefined) { step['timeoutInMinutes'] = timeoutInMinutes; }
+
+  // task: specific
+  if (tn.data.kind === 'task') {
+    const retryCount = d['retryCountOnTaskFailure'] as number | undefined;
+    if (retryCount !== undefined) { step['retryCountOnTaskFailure'] = retryCount; }
+
+    const inputsRaw = d['inputsRaw'] as string | undefined;
+    if (inputsRaw) {
+      try { step['inputs'] = jsYaml.load(inputsRaw); } catch { /* skip malformed */ }
+    }
+  }
+
+  // script/bash/powershell specific
+  if (tn.data.kind === 'script') {
+    const workingDirectory = d['workingDirectory'] as string | undefined;
+    if (workingDirectory) { step['workingDirectory'] = workingDirectory; }
+
+    const failOnStderr = d['failOnStderr'] as boolean | undefined;
+    if (failOnStderr === true) { step['failOnStderr'] = true; }
+
+    if (stepKind === 'powershell') {
+      const errorActionPreference = d['errorActionPreference'] as string | undefined;
+      if (errorActionPreference) { step['errorActionPreference'] = errorActionPreference; }
+
+      const ignoreLASTEXITCODE = d['ignoreLASTEXITCODE'] as boolean | undefined;
+      if (ignoreLASTEXITCODE === true) { step['ignoreLASTEXITCODE'] = true; }
+    }
+  }
+
+  // env — used by task, script, bash, powershell
+  if (tn.data.kind === 'task' || tn.data.kind === 'script') {
+    const envRaw = d['envRaw'] as string | undefined;
+    if (envRaw) {
+      try { step['env'] = jsYaml.load(envRaw); } catch { /* skip malformed */ }
+    }
+  }
+
+  // checkout specific
+  if (tn.data.kind === 'checkout') {
+    const clean = d['clean'] as boolean | undefined;
+    if (clean === true) { step['clean'] = true; }
+    if (clean === false) { step['clean'] = false; }
+
+    const fetchDepth = d['fetchDepth'] as number | undefined;
+    if (fetchDepth !== undefined) { step['fetchDepth'] = fetchDepth; }
+
+    const lfs = d['lfs'] as boolean | undefined;
+    if (lfs === true) { step['lfs'] = true; }
+
+    const submodules = d['submodules'] as boolean | 'recursive' | undefined;
+    if (submodules !== undefined) { step['submodules'] = submodules; }
+
+    const checkoutPath = d['path'] as string | undefined;
+    if (checkoutPath) { step['path'] = checkoutPath; }
+
+    const persistCredentials = d['persistCredentials'] as boolean | undefined;
+    if (persistCredentials === true) { step['persistCredentials'] = true; }
+  }
+
+  // download specific
+  if (tn.data.kind === 'download') {
+    const artifact = d['artifact'] as string | undefined;
+    if (artifact) { step['artifact'] = artifact; }
+
+    const downloadPath = d['path'] as string | undefined;
+    if (downloadPath) { step['path'] = downloadPath; }
+
+    const patterns = d['patterns'] as string | undefined;
+    if (patterns) { step['patterns'] = patterns; }
   }
 
   return step;

@@ -17,7 +17,10 @@ export interface PipelineTaskStep {
   enabled?: boolean;
   condition?: string;
   continueOnError?: boolean;
+  timeoutInMinutes?: number;
+  retryCountOnTaskFailure?: number;
   inputs?: Record<string, string | boolean | number>;
+  env?: Record<string, string>;
 }
 
 export interface PipelineScriptStep {
@@ -27,6 +30,10 @@ export interface PipelineScriptStep {
   enabled?: boolean;
   condition?: string;
   continueOnError?: boolean;
+  timeoutInMinutes?: number;
+  workingDirectory?: string;
+  env?: Record<string, string>;
+  failOnStderr?: boolean;
 }
 
 export interface PipelineBashStep {
@@ -36,6 +43,10 @@ export interface PipelineBashStep {
   enabled?: boolean;
   condition?: string;
   continueOnError?: boolean;
+  timeoutInMinutes?: number;
+  workingDirectory?: string;
+  env?: Record<string, string>;
+  failOnStderr?: boolean;
 }
 
 export interface PipelinePowerShellStep {
@@ -45,6 +56,12 @@ export interface PipelinePowerShellStep {
   enabled?: boolean;
   condition?: string;
   continueOnError?: boolean;
+  timeoutInMinutes?: number;
+  workingDirectory?: string;
+  env?: Record<string, string>;
+  failOnStderr?: boolean;
+  errorActionPreference?: string;
+  ignoreLASTEXITCODE?: boolean;
 }
 
 export interface PipelineCheckoutStep {
@@ -53,19 +70,28 @@ export interface PipelineCheckoutStep {
   fetchDepth?: number;
   lfs?: boolean;
   submodules?: boolean | 'recursive';
+  path?: string;
+  persistCredentials?: boolean;
 }
 
 export interface PipelinePublishStep {
   publish: string;
   artifact: string;
   displayName?: string;
+  name?: string;
+  enabled?: boolean;
+  condition?: string;
 }
 
 export interface PipelineDownloadStep {
   download: string;
   artifact?: string;
   path?: string;
+  patterns?: string;
   displayName?: string;
+  name?: string;
+  enabled?: boolean;
+  condition?: string;
 }
 
 export type PipelineStep =

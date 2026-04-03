@@ -134,6 +134,12 @@ export default function PropertiesPanel({
   const isManual        = isTrigger && triggerType === 'manual';
   const poolValue       = (data.details?.['pool'] as string | undefined) ?? '';
   const taskName        = (data.details?.['taskName'] as string | undefined) ?? '';
+  const stepKind        = (data.details?.['stepKind'] as string | undefined) ?? data.kind as string;
+  const isAzureTask     = data.kind === 'task';
+  const isScriptStep    = data.kind === 'script';
+  const isCheckout      = data.kind === 'checkout';
+  const isPublish       = data.kind === 'publish';
+  const isDownload      = data.kind === 'download';
 
   return (
     <aside className="props-panel">
@@ -385,21 +391,285 @@ export default function PropertiesPanel({
           </div>
         )}
 
-        {/* Task / script content */}
-        {taskName !== '' && (
-          <div className="props-row props-row--col">
-            <label className="props-label" htmlFor="pp-taskName">Task / Script</label>
-            <textarea
-              id="pp-taskName"
-              className="props-input props-textarea"
+        {/* ── Azure DevOps task step ──────────────────────────────────── */}
+        {isAzureTask && (
+          <>
+            <SectionDivider label="Task" />
+            <TextField
+              id="pp-task-ref"
+              label="Task Reference"
               value={taskName}
-              onChange={(e) =>
-                set({ details: { ...data.details, taskName: e.target.value } })
-              }
-              rows={4}
+              placeholder="DotNetCoreCLI@2"
+              onChange={(v) => setDetail('taskName', v)}
             />
-          </div>
+            <TextField
+              id="pp-task-name"
+              label="Step ID (name)"
+              value={(data.details?.['name'] as string | undefined) ?? ''}
+              placeholder="myStep"
+              onChange={(v) => setDetail('name', v !== '' ? v : undefined)}
+            />
+            <SectionDivider label="Options" />
+            <CheckboxField
+              id="pp-task-continueOnError"
+              label="Continue on Error"
+              checked={(data.details?.['continueOnError'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('continueOnError', v ? true : undefined)}
+            />
+            <NumberField
+              id="pp-task-timeout"
+              label="Timeout (minutes)"
+              value={data.details?.['timeoutInMinutes'] as number | undefined}
+              onChange={(v) => setDetail('timeoutInMinutes', v)}
+            />
+            <NumberField
+              id="pp-task-retry"
+              label="Retry Count on Task Failure"
+              value={data.details?.['retryCountOnTaskFailure'] as number | undefined}
+              onChange={(v) => setDetail('retryCountOnTaskFailure', v)}
+            />
+            <SectionDivider label="Inputs (YAML)" />
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-task-inputs"
+                className="props-input props-textarea"
+                value={(data.details?.['inputsRaw'] as string | undefined) ?? ''}
+                placeholder={"command: restore\nprojects: '**/*.csproj'"}
+                onChange={(e) => setDetail('inputsRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={4}
+                spellCheck={false}
+              />
+            </div>
+            <SectionDivider label="Environment Variables (YAML)" />
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-task-env"
+                className="props-input props-textarea"
+                value={(data.details?.['envRaw'] as string | undefined) ?? ''}
+                placeholder={'MY_VAR: value'}
+                onChange={(e) => setDetail('envRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={3}
+                spellCheck={false}
+              />
+            </div>
+          </>
         )}
+
+        {/* ── Script / Bash / PowerShell step ────────────────────────── */}
+        {isScriptStep && (
+          <>
+            <SectionDivider label="Script" />
+            <div className="props-row props-row--col">
+              <label className="props-label" htmlFor="pp-script-kind">Script Type</label>
+              <select
+                id="pp-script-kind"
+                className="props-input"
+                value={stepKind}
+                onChange={(e) => setDetail('stepKind', e.target.value)}
+              >
+                <option value="script">script (sh)</option>
+                <option value="bash">bash</option>
+                <option value="powershell">powershell</option>
+              </select>
+            </div>
+            <div className="props-row props-row--col">
+              <label className="props-label" htmlFor="pp-script-content">Script Content</label>
+              <textarea
+                id="pp-script-content"
+                className="props-input props-textarea"
+                value={taskName}
+                onChange={(e) => setDetail('taskName', e.target.value)}
+                rows={5}
+                spellCheck={false}
+              />
+            </div>
+            <TextField
+              id="pp-script-name"
+              label="Step ID (name)"
+              value={(data.details?.['name'] as string | undefined) ?? ''}
+              placeholder="myStep"
+              onChange={(v) => setDetail('name', v !== '' ? v : undefined)}
+            />
+            <TextField
+              id="pp-script-workingDir"
+              label="Working Directory"
+              value={(data.details?.['workingDirectory'] as string | undefined) ?? ''}
+              placeholder="$(Build.SourcesDirectory)"
+              onChange={(v) => setDetail('workingDirectory', v !== '' ? v : undefined)}
+            />
+            <SectionDivider label="Options" />
+            <CheckboxField
+              id="pp-script-continueOnError"
+              label="Continue on Error"
+              checked={(data.details?.['continueOnError'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('continueOnError', v ? true : undefined)}
+            />
+            <NumberField
+              id="pp-script-timeout"
+              label="Timeout (minutes)"
+              value={data.details?.['timeoutInMinutes'] as number | undefined}
+              onChange={(v) => setDetail('timeoutInMinutes', v)}
+            />
+            <CheckboxField
+              id="pp-script-failOnStderr"
+              label="Fail on Stderr"
+              checked={(data.details?.['failOnStderr'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('failOnStderr', v ? true : undefined)}
+            />
+            {stepKind === 'powershell' && (
+              <>
+                <TextField
+                  id="pp-ps-errorActionPreference"
+                  label="Error Action Preference"
+                  value={(data.details?.['errorActionPreference'] as string | undefined) ?? ''}
+                  placeholder="stop"
+                  onChange={(v) => setDetail('errorActionPreference', v !== '' ? v : undefined)}
+                />
+                <CheckboxField
+                  id="pp-ps-ignoreLASTEXITCODE"
+                  label="Ignore LASTEXITCODE"
+                  checked={(data.details?.['ignoreLASTEXITCODE'] as boolean | undefined) ?? false}
+                  onChange={(v) => setDetail('ignoreLASTEXITCODE', v ? true : undefined)}
+                />
+              </>
+            )}
+            <SectionDivider label="Environment Variables (YAML)" />
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-script-env"
+                className="props-input props-textarea"
+                value={(data.details?.['envRaw'] as string | undefined) ?? ''}
+                placeholder={'MY_VAR: value'}
+                onChange={(e) => setDetail('envRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={3}
+                spellCheck={false}
+              />
+            </div>
+          </>
+        )}
+
+        {/* ── Checkout step ────────────────────────────────────────────── */}
+        {isCheckout && (
+          <>
+            <SectionDivider label="Checkout" />
+            <TextField
+              id="pp-checkout-ref"
+              label="Repository"
+              value={taskName}
+              placeholder="self"
+              onChange={(v) => setDetail('taskName', v !== '' ? v : 'self')}
+            />
+            <SectionDivider label="Options" />
+            <NumberField
+              id="pp-checkout-fetchDepth"
+              label="Fetch Depth"
+              value={data.details?.['fetchDepth'] as number | undefined}
+              placeholder="1"
+              onChange={(v) => setDetail('fetchDepth', v)}
+            />
+            <TextField
+              id="pp-checkout-path"
+              label="Path"
+              value={(data.details?.['path'] as string | undefined) ?? ''}
+              placeholder="s"
+              onChange={(v) => setDetail('path', v !== '' ? v : undefined)}
+            />
+            <div className="props-row props-row--col">
+              <label className="props-label" htmlFor="pp-checkout-submodules">Submodules</label>
+              <select
+                id="pp-checkout-submodules"
+                className="props-input"
+                value={String(data.details?.['submodules'] ?? '')}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setDetail('submodules', val === '' ? undefined : val === 'recursive' ? 'recursive' : val === 'true' ? true : false);
+                }}
+              >
+                <option value="">default</option>
+                <option value="true">true</option>
+                <option value="false">false</option>
+                <option value="recursive">recursive</option>
+              </select>
+            </div>
+            <CheckboxField
+              id="pp-checkout-clean"
+              label="Clean"
+              checked={(data.details?.['clean'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('clean', v)}
+            />
+            <CheckboxField
+              id="pp-checkout-lfs"
+              label="LFS"
+              checked={(data.details?.['lfs'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('lfs', v ? true : undefined)}
+            />
+            <CheckboxField
+              id="pp-checkout-persistCredentials"
+              label="Persist Credentials"
+              checked={(data.details?.['persistCredentials'] as boolean | undefined) ?? false}
+              onChange={(v) => setDetail('persistCredentials', v ? true : undefined)}
+            />
+          </>
+        )}
+
+        {/* ── Publish step ─────────────────────────────────────────────── */}
+        {isPublish && (
+          <>
+            <SectionDivider label="Publish" />
+            <TextField
+              id="pp-publish-path"
+              label="Publish Path"
+              value={taskName}
+              placeholder="$(Build.ArtifactStagingDirectory)"
+              onChange={(v) => setDetail('taskName', v)}
+            />
+            <TextField
+              id="pp-publish-artifact"
+              label="Artifact Name"
+              value={(data.details?.['artifact'] as string | undefined) ?? ''}
+              placeholder="drop"
+              onChange={(v) => setDetail('artifact', v !== '' ? v : undefined)}
+            />
+          </>
+        )}
+
+        {/* ── Download step ────────────────────────────────────────────── */}
+        {isDownload && (
+          <>
+            <SectionDivider label="Download" />
+            <TextField
+              id="pp-download-ref"
+              label="Pipeline Ref"
+              value={taskName}
+              placeholder="current"
+              onChange={(v) => setDetail('taskName', v !== '' ? v : 'current')}
+            />
+            <TextField
+              id="pp-download-artifact"
+              label="Artifact Name"
+              value={(data.details?.['artifact'] as string | undefined) ?? ''}
+              placeholder="drop"
+              onChange={(v) => setDetail('artifact', v !== '' ? v : undefined)}
+            />
+            <TextField
+              id="pp-download-path"
+              label="Download Path"
+              value={(data.details?.['path'] as string | undefined) ?? ''}
+              placeholder="$(Pipeline.Workspace)/drop"
+              onChange={(v) => setDetail('path', v !== '' ? v : undefined)}
+            />
+            <TextField
+              id="pp-download-patterns"
+              label="Patterns"
+              value={(data.details?.['patterns'] as string | undefined) ?? ''}
+              placeholder="**"
+              onChange={(v) => setDetail('patterns', v !== '' ? v : undefined)}
+            />
+          </>
+        )}
+
+        {/* ── Step node shared: enabled toggle shown earlier covers non-step nodes;
+               for step nodes Enabled is already handled by the isNotTrigger block above ── */}
 
         {/* ── Manual trigger ───────────────────────────────────────────── */}
         {isManual && (

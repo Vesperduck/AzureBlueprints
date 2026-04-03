@@ -1842,3 +1842,333 @@ stages:
     expect(stage['pool']).toBeUndefined();
   });
 });
+
+// ── Step field round-trips ────────────────────────────────────────────────────
+
+describe('step field round-trips', () => {
+  /** Build a steps-only YAML with a single step block. */
+  const wrap = (stepYaml: string) =>
+    `steps:\n${stepYaml.split('\n').map((l) => `  ${l}`).join('\n')}`;
+
+  // ── task: step ─────────────────────────────────────────────────────────────
+
+  describe('task: step', () => {
+    it('stores stepKind as "task" in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- task: DotNetCoreCLI@2'));
+      const n = nodes.find((n) => n.data.kind === 'task')!;
+      expect(n.data.details?.['stepKind']).toBe('task');
+    });
+
+    it('stores taskName (task reference) in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- task: NuGetCommand@2'));
+      const n = nodes.find((n) => n.data.kind === 'task')!;
+      expect(n.data.details?.['taskName']).toBe('NuGetCommand@2');
+    });
+
+    it('round-trips inputs map', () => {
+      const yaml = wrap('- task: DotNetCoreCLI@2\n  inputs:\n    command: restore\n    projects: "**/*.csproj"');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect((parsed.steps[0]['inputs'] as Record<string, unknown>)['command']).toBe('restore');
+    });
+
+    it('round-trips env map', () => {
+      const yaml = wrap('- task: DotNetCoreCLI@2\n  env:\n    MY_VAR: hello');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect((parsed.steps[0]['env'] as Record<string, unknown>)['MY_VAR']).toBe('hello');
+    });
+
+    it('round-trips continueOnError: true', () => {
+      const yaml = wrap('- task: DotNetCoreCLI@2\n  continueOnError: true');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['continueOnError']).toBe(true);
+    });
+
+    it('does not emit continueOnError when false/absent', () => {
+      const { nodes, edges } = pipelineToGraph(wrap('- task: DotNetCoreCLI@2'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['continueOnError']).toBeUndefined();
+    });
+
+    it('round-trips timeoutInMinutes', () => {
+      const yaml = wrap('- task: DotNetCoreCLI@2\n  timeoutInMinutes: 15');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['timeoutInMinutes']).toBe(15);
+    });
+
+    it('round-trips retryCountOnTaskFailure', () => {
+      const yaml = wrap('- task: DotNetCoreCLI@2\n  retryCountOnTaskFailure: 3');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['retryCountOnTaskFailure']).toBe(3);
+    });
+
+    it('round-trips step name (id)', () => {
+      const yaml = wrap('- task: DotNetCoreCLI@2\n  name: restoreStep');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['name']).toBe('restoreStep');
+    });
+  });
+
+  // ── script: step ───────────────────────────────────────────────────────────
+
+  describe('script: step', () => {
+    it('stores stepKind as "script" in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- script: echo hi'));
+      const n = nodes.find((n) => n.data.kind === 'script')!;
+      expect(n.data.details?.['stepKind']).toBe('script');
+    });
+
+    it('round-trips script content', () => {
+      const yaml = wrap('- script: echo hello world');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['script']).toBe('echo hello world');
+    });
+
+    it('round-trips workingDirectory', () => {
+      const yaml = wrap('- script: echo hi\n  workingDirectory: $(Build.SourcesDirectory)');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['workingDirectory']).toBe('$(Build.SourcesDirectory)');
+    });
+
+    it('round-trips failOnStderr: true', () => {
+      const yaml = wrap('- script: echo hi\n  failOnStderr: true');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['failOnStderr']).toBe(true);
+    });
+
+    it('does not emit failOnStderr when absent', () => {
+      const { nodes, edges } = pipelineToGraph(wrap('- script: echo hi'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['failOnStderr']).toBeUndefined();
+    });
+
+    it('round-trips env map', () => {
+      const yaml = wrap('- script: echo hi\n  env:\n    FOO: bar');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect((parsed.steps[0]['env'] as Record<string, unknown>)['FOO']).toBe('bar');
+    });
+  });
+
+  // ── bash: step ─────────────────────────────────────────────────────────────
+
+  describe('bash: step', () => {
+    it('stores stepKind as "bash" in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- bash: echo hi'));
+      const n = nodes.find((n) => n.data.kind === 'script')!;
+      expect(n.data.details?.['stepKind']).toBe('bash');
+    });
+
+    it('round-trips bash step as bash: key (not script:)', () => {
+      const yaml = wrap('- bash: echo world');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['bash']).toBe('echo world');
+      expect(parsed.steps[0]['script']).toBeUndefined();
+    });
+
+    it('round-trips failOnStderr for bash step', () => {
+      const yaml = wrap('- bash: echo hi\n  failOnStderr: true');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['failOnStderr']).toBe(true);
+    });
+  });
+
+  // ── powershell: step ───────────────────────────────────────────────────────
+
+  describe('powershell: step', () => {
+    it('stores stepKind as "powershell" in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- powershell: Write-Host hi'));
+      const n = nodes.find((n) => n.data.kind === 'script')!;
+      expect(n.data.details?.['stepKind']).toBe('powershell');
+    });
+
+    it('round-trips powershell step as powershell: key', () => {
+      const yaml = wrap('- powershell: Write-Host hello');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['powershell']).toBe('Write-Host hello');
+      expect(parsed.steps[0]['script']).toBeUndefined();
+    });
+
+    it('round-trips errorActionPreference', () => {
+      const yaml = wrap('- powershell: Write-Host hi\n  errorActionPreference: continue');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['errorActionPreference']).toBe('continue');
+    });
+
+    it('round-trips ignoreLASTEXITCODE: true', () => {
+      const yaml = wrap('- powershell: Write-Host hi\n  ignoreLASTEXITCODE: true');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['ignoreLASTEXITCODE']).toBe(true);
+    });
+  });
+
+  // ── checkout: step ─────────────────────────────────────────────────────────
+
+  describe('checkout: step', () => {
+    it('stores stepKind as "checkout" in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- checkout: self'));
+      const n = nodes.find((n) => n.data.kind === 'checkout')!;
+      expect(n.data.details?.['stepKind']).toBe('checkout');
+    });
+
+    it('round-trips checkout ref', () => {
+      const { nodes, edges } = pipelineToGraph(wrap('- checkout: self'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['checkout']).toBe('self');
+    });
+
+    it('round-trips fetchDepth', () => {
+      const yaml = wrap('- checkout: self\n  fetchDepth: 1');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['fetchDepth']).toBe(1);
+    });
+
+    it('round-trips lfs: true', () => {
+      const yaml = wrap('- checkout: self\n  lfs: true');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['lfs']).toBe(true);
+    });
+
+    it('round-trips submodules: recursive', () => {
+      const yaml = wrap('- checkout: self\n  submodules: recursive');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['submodules']).toBe('recursive');
+    });
+
+    it('round-trips path', () => {
+      const yaml = wrap('- checkout: self\n  path: s/myrepo');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['path']).toBe('s/myrepo');
+    });
+
+    it('round-trips persistCredentials: true', () => {
+      const yaml = wrap('- checkout: self\n  persistCredentials: true');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['persistCredentials']).toBe(true);
+    });
+
+    it('round-trips clean: false', () => {
+      const yaml = wrap('- checkout: self\n  clean: false');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['clean']).toBe(false);
+    });
+  });
+
+  // ── publish: step ──────────────────────────────────────────────────────────
+
+  describe('publish: step', () => {
+    it('stores stepKind as "publish" in details', () => {
+      const yaml = wrap('- publish: $(Build.ArtifactStagingDirectory)\n  artifact: drop');
+      const { nodes } = pipelineToGraph(yaml);
+      const n = nodes.find((n) => n.data.kind === 'publish')!;
+      expect(n.data.details?.['stepKind']).toBe('publish');
+    });
+
+    it('stores publish path in details.taskName', () => {
+      const yaml = wrap('- publish: $(Build.ArtifactStagingDirectory)\n  artifact: drop');
+      const { nodes } = pipelineToGraph(yaml);
+      const n = nodes.find((n) => n.data.kind === 'publish')!;
+      expect(n.data.details?.['taskName']).toBe('$(Build.ArtifactStagingDirectory)');
+    });
+
+    it('stores artifact name in details', () => {
+      const yaml = wrap('- publish: $(Build.ArtifactStagingDirectory)\n  artifact: drop');
+      const { nodes } = pipelineToGraph(yaml);
+      const n = nodes.find((n) => n.data.kind === 'publish')!;
+      expect(n.data.details?.['artifact']).toBe('drop');
+    });
+
+    it('round-trips publish + artifact', () => {
+      const yaml = wrap('- publish: $(Build.ArtifactStagingDirectory)\n  artifact: drop');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['publish']).toBe('$(Build.ArtifactStagingDirectory)');
+      expect(parsed.steps[0]['artifact']).toBe('drop');
+    });
+  });
+
+  // ── download: step ─────────────────────────────────────────────────────────
+
+  describe('download: step', () => {
+    it('stores stepKind as "download" in details', () => {
+      const { nodes } = pipelineToGraph(wrap('- download: current\n  artifact: drop'));
+      const n = nodes.find((n) => n.data.kind === 'download')!;
+      expect(n.data.details?.['stepKind']).toBe('download');
+    });
+
+    it('round-trips download ref', () => {
+      const { nodes, edges } = pipelineToGraph(wrap('- download: current'));
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['download']).toBe('current');
+    });
+
+    it('round-trips artifact name', () => {
+      const yaml = wrap('- download: current\n  artifact: drop');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['artifact']).toBe('drop');
+    });
+
+    it('round-trips path', () => {
+      const yaml = wrap('- download: current\n  artifact: drop\n  path: $(Pipeline.Workspace)/drop');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['path']).toBe('$(Pipeline.Workspace)/drop');
+    });
+
+    it('round-trips patterns', () => {
+      const yaml = wrap('- download: current\n  artifact: drop\n  patterns: "**/*.zip"');
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const out = graphToPipeline(nodes, edges);
+      const parsed = jsYaml.load(out) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['patterns']).toBe('**/*.zip');
+    });
+  });
+});

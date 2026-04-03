@@ -14,6 +14,7 @@ A Visual Studio Code extension that renders Azure DevOps YAML pipelines as inter
 - **CI trigger properties** – CI trigger nodes expose Branches (include/exclude), Paths (include/exclude), Tags (include/exclude), and the Batch flag in the Properties panel.
 - **Schedule trigger properties** — Scheduled trigger nodes expose the cron expression, schedule name, Branches (include/exclude), Always, and Batch fields in the Properties panel.
 - **PR trigger properties** — PR trigger nodes expose Branches (include/exclude), Paths (include/exclude), Auto Cancel, and Drafts in the Properties panel.
+- **Full task step editing** — Selecting a task node shows all editable fields for its step kind: task reference/inputs/env/retry count for `task:` steps; script content/working directory/env/fail-on-stderr for `script:`/`bash:`/`powershell:` steps (with a type selector); fetch depth/submodules/LFS/path/persistCredentials for `checkout:` steps; publish path and artifact for `publish:`; and download ref, artifact, path, and patterns for `download:` steps. All fields round-trip through the YAML converter.
 
 ## Architecture
 
