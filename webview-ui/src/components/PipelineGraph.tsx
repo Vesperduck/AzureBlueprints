@@ -64,6 +64,46 @@ function ensureStageConnectivity(
   return extra.length > 0 ? [...edges, ...extra] : edges;
 }
 
+/**
+ * Ensures every job node has at least one incoming edge from a stage or another
+ * job. Any job that loses all such incoming edges gets reconnected to its
+ * parent stage (stored in node.data.parentId) or, for jobs-only pipelines, to
+ * the trigger node.
+ */
+function ensureJobConnectivity(
+  nodes: Node<GraphNodeData>[],
+  edges: Edge[]
+): Edge[] {
+  const triggerNode = nodes.find((n) => n.data.kind === 'trigger');
+  const extra: Edge[] = [];
+  for (const node of nodes) {
+    if (node.data.kind !== 'job') { continue; }
+    const hasParentEdge = edges.some((e) => {
+      if (e.target !== node.id) { return false; }
+      const src = nodes.find((n) => n.id === e.source);
+      return src?.data.kind === 'stage' || src?.data.kind === 'job';
+    });
+    if (hasParentEdge) { continue; }
+    // Reconnect via parentId (stage or trigger stored at parse time), or
+    // fall back to the trigger (jobs-only) / first stage (stage pipeline).
+    const parentId = node.data.parentId;
+    const parentNode = parentId ? nodes.find((n) => n.id === parentId) : undefined;
+    const reconnectTo =
+      parentNode ??
+      nodes.find((n) => n.data.kind === 'stage') ??
+      triggerNode;
+    if (!reconnectTo) { continue; }
+    extra.push({
+      id: `${reconnectTo.id}->${node.id}`,
+      source: reconnectTo.id,
+      target: node.id,
+      animated: true,
+      style: { stroke: '#0078d4', strokeWidth: 2 },
+    });
+  }
+  return extra.length > 0 ? [...edges, ...extra] : edges;
+}
+
 interface PipelineGraphProps {
   nodes: Node<GraphNodeData>[];
   edges: Edge[];
@@ -140,7 +180,8 @@ export default function PipelineGraph({
         if (deferredSync.current !== null) clearTimeout(deferredSync.current);
         deferredSync.current = setTimeout(() => {
           deferredSync.current = null;
-          const normalized = ensureStageConnectivity(currentNodes.current, latestEdges.current);
+          let normalized = ensureStageConnectivity(currentNodes.current, latestEdges.current);
+          normalized = ensureJobConnectivity(currentNodes.current, normalized);
           if (normalized !== latestEdges.current) {
             latestEdges.current = normalized;
             onEdgesChange(normalized);
@@ -167,6 +208,17 @@ export default function PipelineGraph({
           if (e.target !== connection.target) { return true; }
           const src = nodes.find((n) => n.id === e.source);
           if (src?.data.kind === 'trigger') { return false; }
+          if (e.source === connection.source) { return false; } // dedup
+          return true;
+        });
+      } else if (targetNode?.data.kind === 'job' && sourceNode?.data.kind === 'job') {
+        // Job-to-job connections also allow multiple incoming dep edges.
+        // Remove stage→target and trigger→target edges (job deps replace them)
+        // and deduplicate same source, but keep other job→target edges.
+        withoutExisting = edges.filter((e) => {
+          if (e.target !== connection.target) { return true; }
+          const src = nodes.find((n) => n.id === e.source);
+          if (src?.data.kind === 'stage' || src?.data.kind === 'trigger') { return false; }
           if (e.source === connection.source) { return false; } // dedup
           return true;
         });
@@ -199,9 +251,10 @@ export default function PipelineGraph({
   const handleConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent) => {
       // Only act when the drag ended without hitting a valid target handle
-      // AND the source was a trigger node.
+      // AND the source was a trigger or stage node.
       if (connectCompleted.current) { return; }
-      if (!connectSource.current || connectSource.current.kind !== 'trigger') { return; }
+      const sourceKind = connectSource.current?.kind;
+      if (!connectSource.current || (sourceKind !== 'trigger' && sourceKind !== 'stage')) { return; }
       const target = event.target as Element;
       if (!target.classList.contains('react-flow__pane')) { return; }
 
@@ -209,12 +262,16 @@ export default function PipelineGraph({
         'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent);
 
       const position = project({ x: clientX, y: clientY });
-      const newId = `stage-${Date.now()}`;
+      const isFromStage = sourceKind === 'stage';
+      const newKind = isFromStage ? 'job' : 'stage';
+      const newId = `${newKind}-${Date.now()}`;
       const newNode: Node<GraphNodeData> = {
         id: newId,
-        type: 'stage',
+        type: newKind,
         position,
-        data: { kind: 'stage', label: 'New Stage', rawId: 'NewStage' },
+        data: isFromStage
+          ? { kind: 'job', label: 'New Job', rawId: 'NewJob' }
+          : { kind: 'stage', label: 'New Stage', rawId: 'NewStage' },
       };
       const newEdge: Edge = {
         id: `e-${connectSource.current.nodeId}-${newId}`,
@@ -280,9 +337,10 @@ export default function PipelineGraph({
     (_: MouseEvent | TouchEvent, edge: Edge) => {
       if (!edgeReconnected.current) {
         // Dropped on empty space — remove the edge, then restore any trigger→stage
-        // edges for stages that would otherwise become disconnected.
+        // or stage/trigger→job edges for nodes that would otherwise become disconnected.
         let updated = edges.filter((e) => e.id !== edge.id);
         updated = ensureStageConnectivity(nodes, updated);
+        updated = ensureJobConnectivity(nodes, updated);
         onEdgesChange(updated);
         onGraphChange(nodes, updated);
       }

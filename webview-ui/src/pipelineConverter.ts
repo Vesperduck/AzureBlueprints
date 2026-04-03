@@ -151,12 +151,22 @@ export function pipelineToGraph(yaml: string): {
         jobNode.data.displayName = jobLabel;
         jobNode.data.condition = job.condition;
         jobNode.data.dependsOn = normalizeDependsOn(job.dependsOn);
+        jobNode.data.parentId = stageId;
         jobNode.data.details = {
           pool: describePool(job.pool),
           isDeployment,
         };
         nodes.push(jobNode);
-        edges.push(makeEdge(stageId, jobId));
+        // Connect via dependsOn edges if present, else connect to parent stage.
+        const jobDeps = normalizeDependsOn(job.dependsOn);
+        if (jobDeps.length > 0) {
+          for (const dep of jobDeps) {
+            const depNode = nodes.find((n) => n.data.rawId === dep && n.data.kind === 'job');
+            if (depNode) { edges.push(makeEdge(depNode.id, jobId)); }
+          }
+        } else {
+          edges.push(makeEdge(stageId, jobId));
+        }
 
         // Steps / tasks inside job – chained sequentially
         const steps: PipelineStep[] = (job as PipelineJob).steps ?? [];
@@ -204,9 +214,19 @@ export function pipelineToGraph(yaml: string): {
         y: jobY,
       });
       jobNode.data.dependsOn = normalizeDependsOn(job.dependsOn);
+      jobNode.data.parentId = triggerId;
       jobNode.data.details = { pool: describePool(job.pool), isDeployment };
       nodes.push(jobNode);
-      edges.push(makeEdge(triggerId, jobId));
+      // Connect via dependsOn edges if present, else connect to trigger.
+      const jobDepsOnly = normalizeDependsOn(job.dependsOn);
+      if (jobDepsOnly.length > 0) {
+        for (const dep of jobDepsOnly) {
+          const depNode = nodes.find((n) => n.data.rawId === dep && n.data.kind === 'job');
+          if (depNode) { edges.push(makeEdge(depNode.id, jobId)); }
+        }
+      } else {
+        edges.push(makeEdge(triggerId, jobId));
+      }
 
       const steps: PipelineStep[] = (job as PipelineJob).steps ?? [];
       let taskY = jobY;
@@ -407,11 +427,29 @@ export function graphToPipeline(
   // ── Stages ────────────────────────────────────────────────────────────────
   if (stageNodes.length > 0) {
     const stages = stageNodes.map((sn) => {
-      const jobChildren = (childMap.get(sn.id) ?? [])
-        .map((jid) => jobNodes.find((j) => j.id === jid))
+      // Collect all jobs belonging to this stage by BFS through stage→job
+      // and job→job edges (jobs that depend on another job are connected
+      // job→job rather than stage→job).
+      const jobNodeIdSet = new Set(jobNodes.map((j) => j.id));
+      const stageJobNodes: Node<GraphNodeData>[] = [];
+      const visitedJobs = new Set<string>();
+      const jobQueue = (childMap.get(sn.id) ?? [])
+        .filter((id) => jobNodeIdSet.has(id))
+        .map((id) => jobNodes.find((j) => j.id === id))
         .filter((j): j is Node<GraphNodeData> => !!j);
+      while (jobQueue.length > 0) {
+        const jn = jobQueue.shift()!;
+        if (visitedJobs.has(jn.id)) { continue; }
+        visitedJobs.add(jn.id);
+        stageJobNodes.push(jn);
+        const depJobChildren = (childMap.get(jn.id) ?? [])
+          .filter((id) => jobNodeIdSet.has(id))
+          .map((id) => jobNodes.find((j) => j.id === id))
+          .filter((j): j is Node<GraphNodeData> => !!j);
+        jobQueue.push(...depJobChildren);
+      }
 
-      const jobs = jobChildren.map((jn) => buildJobObject(jn, childMap, taskNodes));
+      const jobs = stageJobNodes.map((jn) => buildJobObject(jn, childMap, taskNodes, nodes, _edges));
 
       const stageObj: Record<string, unknown> = {
         stage: sn.data.rawId,
@@ -458,7 +496,7 @@ export function graphToPipeline(
 
   // ── Jobs only ─────────────────────────────────────────────────────────────
   if (jobNodes.length > 0) {
-    const jobs = jobNodes.map((jn) => buildJobObject(jn, childMap, taskNodes));
+    const jobs = jobNodes.map((jn) => buildJobObject(jn, childMap, taskNodes, nodes, _edges));
     return jsYaml.dump({ ...triggerYaml, jobs }, { lineWidth: 120, noRefs: true });
   }
 
@@ -698,7 +736,9 @@ function truncateScript(s: string, max = 40): string {
 function buildJobObject(
   jn: Node<GraphNodeData>,
   childMap: Map<string, string[]>,
-  taskNodes: Node<GraphNodeData>[]
+  taskNodes: Node<GraphNodeData>[],
+  allNodes: Node<GraphNodeData>[],
+  allEdges: Edge[]
 ): Record<string, unknown> {
   // Tasks are chained sequentially (job→task1→task2→…), not as a flat
   // hub-and-spoke from the job. Walk the linked chain to collect all steps.
@@ -729,11 +769,15 @@ function buildJobObject(
   if (jn.data.displayName && jn.data.displayName !== jn.data.rawId) {
     jobObj['displayName'] = jn.data.displayName;
   }
-  if (jn.data.dependsOn && jn.data.dependsOn.length > 0) {
+  // Derive dependsOn from incoming job→job edges so that drawing edges in the
+  // graph is the authoritative way to express job ordering.
+  const jobDeps = allEdges
+    .filter((e) => e.target === jn.id)
+    .map((e) => allNodes.find((n) => n.id === e.source))
+    .filter((n): n is Node<GraphNodeData> => !!n && n.data.kind === 'job');
+  if (jobDeps.length > 0) {
     jobObj['dependsOn'] =
-      jn.data.dependsOn.length === 1
-        ? jn.data.dependsOn[0]
-        : jn.data.dependsOn;
+      jobDeps.length === 1 ? jobDeps[0].data.rawId : jobDeps.map((n) => n.data.rawId);
   }
   if (jn.data.condition) {
     jobObj['condition'] = jn.data.condition;

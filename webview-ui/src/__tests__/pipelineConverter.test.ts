@@ -302,6 +302,28 @@ describe('pipelineToGraph', () => {
       expect(edges.find((e) => e.source === buildStage.id && e.target === buildJob.id)).toBeDefined();
     });
 
+    it('job with dependsOn creates job→job edge instead of stage→job', () => {
+      const yaml = `
+stages:
+  - stage: MyStage
+    jobs:
+      - job: JobA
+        steps:
+          - script: echo a
+      - job: JobB
+        dependsOn: JobA
+        steps:
+          - script: echo b
+`.trim();
+      const { nodes: ns, edges: es } = pipelineToGraph(yaml);
+      const jobA = ns.find((n) => n.data.rawId === 'JobA')!;
+      const jobB = ns.find((n) => n.data.rawId === 'JobB')!;
+      const stage = ns.find((n) => n.data.kind === 'stage')!;
+      // JobB should be connected from JobA, not from the stage
+      expect(es.find((e) => e.source === jobA.id && e.target === jobB.id)).toBeDefined();
+      expect(es.find((e) => e.source === stage.id && e.target === jobB.id)).toBeUndefined();
+    });
+
     // ── REGRESSION: tasks must chain sequentially, not fan out from job ──────
 
     it('[regression] tasks in BuildJob chain sequentially (job→task1→task2→task3), not hub-and-spoke', () => {
@@ -376,6 +398,26 @@ describe('pipelineToGraph', () => {
       expect(t2.data.kind).toBe('task');
       // t2 is the last step – nothing after it
       expect(edges.filter((e) => e.source === t2.id)).toHaveLength(0);
+    });
+
+    it('job with dependsOn creates job→job edge instead of trigger→job', () => {
+      const yaml = `
+jobs:
+  - job: JobA
+    steps:
+      - script: echo a
+  - job: JobB
+    dependsOn: JobA
+    steps:
+      - script: echo b
+`.trim();
+      const { nodes: ns, edges: es } = pipelineToGraph(yaml);
+      const jobA = ns.find((n) => n.data.rawId === 'JobA')!;
+      const jobB = ns.find((n) => n.data.rawId === 'JobB')!;
+      const trigger = ns.find((n) => n.data.kind === 'trigger')!;
+      // JobB should be connected from JobA, not from the trigger
+      expect(es.find((e) => e.source === jobA.id && e.target === jobB.id)).toBeDefined();
+      expect(es.find((e) => e.source === trigger.id && e.target === jobB.id)).toBeUndefined();
     });
   });
 
@@ -720,6 +762,130 @@ stages:
     const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
     const deploy = parsed.stages.find((s) => s['stage'] === 'Deploy')!;
     expect(deploy['dependsOn']).toBeUndefined();
+  });
+
+  it('stage→job edge (drag-spawn) adds job into stage YAML', () => {
+    // Simulate dragging from a stage to empty space to spawn a new job node.
+    const stageId = 'stage-1';
+    const jobId = 'job-new';
+    const stageNode: Node<GraphNodeData> = {
+      id: stageId,
+      type: 'stage',
+      position: { x: 0, y: 0 },
+      data: { kind: 'stage', label: 'MyStage', rawId: 'MyStage' },
+    };
+    const jobNode: Node<GraphNodeData> = {
+      id: jobId,
+      type: 'job',
+      position: { x: 200, y: 0 },
+      data: { kind: 'job', label: 'New Job', rawId: 'NewJob' },
+    };
+    const edge: Edge = {
+      id: `e-${stageId}-${jobId}`,
+      source: stageId,
+      target: jobId,
+      animated: true,
+      style: {},
+    };
+    const out = graphToPipeline([stageNode, jobNode], [edge]);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    expect(parsed.stages).toHaveLength(1);
+    const stageOut = parsed.stages[0] as Record<string, unknown>;
+    const jobs = stageOut['jobs'] as Array<Record<string, unknown>>;
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]['job']).toBe('NewJob');
+  });
+
+  // ── Job dependency via edges ───────────────────────────────────────────────
+
+  it('job with no incoming job edges emits no dependsOn', () => {
+    const yaml = `
+stages:
+  - stage: S
+    jobs:
+      - job: OnlyJob
+        steps:
+          - script: echo hi
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const jobs = parsed.stages[0]['jobs'] as Array<Record<string, unknown>>;
+    expect(jobs[0]['dependsOn']).toBeUndefined();
+  });
+
+  it('round-trips job dependsOn string via edges', () => {
+    const yaml = `
+stages:
+  - stage: S
+    jobs:
+      - job: JobA
+        steps:
+          - script: echo a
+      - job: JobB
+        dependsOn: JobA
+        steps:
+          - script: echo b
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const jobs = parsed.stages[0]['jobs'] as Array<Record<string, unknown>>;
+    const jobB = jobs.find((j) => j['job'] === 'JobB')!;
+    expect(jobB['dependsOn']).toBe('JobA');
+  });
+
+  it('drawing a job→job edge adds dependsOn to YAML', () => {
+    const stageId = 'stage-1';
+    const jobAId = 'job-a';
+    const jobBId = 'job-b';
+    const stageNode: Node<GraphNodeData> = {
+      id: stageId, type: 'stage', position: { x: 0, y: 0 },
+      data: { kind: 'stage', label: 'S', rawId: 'S' },
+    };
+    const jobA: Node<GraphNodeData> = {
+      id: jobAId, type: 'job', position: { x: 200, y: 0 },
+      data: { kind: 'job', label: 'JobA', rawId: 'JobA' },
+    };
+    const jobB: Node<GraphNodeData> = {
+      id: jobBId, type: 'job', position: { x: 200, y: 100 },
+      data: { kind: 'job', label: 'JobB', rawId: 'JobB' },
+    };
+    const edgeStageA: Edge = { id: `${stageId}->${jobAId}`, source: stageId, target: jobAId, animated: true, style: {} };
+    const edgeAB: Edge    = { id: `${jobAId}->${jobBId}`,  source: jobAId,  target: jobBId, animated: true, style: {} };
+    const out = graphToPipeline([stageNode, jobA, jobB], [edgeStageA, edgeAB]);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const jobs = parsed.stages[0]['jobs'] as Array<Record<string, unknown>>;
+    const jobBOut = jobs.find((j) => j['job'] === 'JobB')!;
+    expect(jobBOut['dependsOn']).toBe('JobA');
+  });
+
+  it('removing a job→job edge removes dependsOn from YAML', () => {
+    const yaml = `
+stages:
+  - stage: S
+    jobs:
+      - job: JobA
+        steps:
+          - script: echo a
+      - job: JobB
+        dependsOn: JobA
+        steps:
+          - script: echo b
+`.trim();
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const jobB = nodes.find((n) => n.data.rawId === 'JobB')!;
+    const stage = nodes.find((n) => n.data.kind === 'stage')!;
+    // Remove the job→job edge to JobB and add back the stage→job edge
+    const withoutDep = [
+      ...edges.filter((e) => e.target !== jobB.id),
+      { id: `${stage.id}->${jobB.id}`, source: stage.id, target: jobB.id, animated: true, style: {} } as Edge,
+    ];
+    const out = graphToPipeline(nodes, withoutDep);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const jobs = parsed.stages[0]['jobs'] as Array<Record<string, unknown>>;
+    const jobBOut = jobs.find((j) => j['job'] === 'JobB')!;
+    expect(jobBOut['dependsOn']).toBeUndefined();
   });
 
   // ── Edge removal regression ────────────────────────────────────────────────
