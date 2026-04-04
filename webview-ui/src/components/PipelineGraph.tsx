@@ -233,6 +233,18 @@ export default function PipelineGraph({
           if (e.source === connection.source) { return false; } // dedup
           return true;
         });
+      } else if (sourceNode?.data.kind === 'job') {
+        // 1:1 job→task enforcement: a job may have at most one direct outgoing
+        // edge to a task node. Remove any existing job→task edges from this
+        // source, then also enforce single incoming edge on the target.
+        const taskKinds = new Set(['task', 'script', 'checkout', 'publish', 'download']);
+        withoutExisting = edges.filter((e) => {
+          if (e.target === connection.target) { return false; } // remove existing incoming on target
+          if (e.source === connection.source && taskKinds.has(
+            nodes.find((n) => n.id === e.target)?.data.kind ?? ''
+          )) { return false; } // remove existing job→task edges from this source
+          return true;
+        });
       } else {
         // All other node types: enforce single incoming edge.
         withoutExisting = edges.filter((e) => e.target !== connection.target);

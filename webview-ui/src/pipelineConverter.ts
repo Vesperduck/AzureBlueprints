@@ -347,10 +347,12 @@ export function insertTriggerNode(
 // ── Insert task node ──────────────────────────────────────────────────────────
 
 export interface InsertTaskInput {
-  /** YAML task reference, e.g. "DotNetCoreCLI@2" */
+  /** YAML task reference, e.g. "DotNetCoreCLI@2", or checkout ref e.g. "self" */
   taskName: string;
   /** When provided, connect the new task to this node instead of auto-detecting the anchor. */
   anchorNodeId?: string;
+  /** Node kind to create. Defaults to 'task'. Use 'checkout' for checkout steps. */
+  nodeKind?: GraphNodeKind;
 }
 
 /**
@@ -387,8 +389,30 @@ export function insertTaskNode(
 
   let anchorId: string | undefined;
   if (input.anchorNodeId) {
-    // Explicit anchor supplied — e.g. a specific job the user dragged from.
-    anchorId = input.anchorNodeId;
+    const anchorNode = currentNodes.find((n) => n.id === input.anchorNodeId);
+    if (anchorNode?.data.kind === 'job') {
+      // 1:1 job→task enforcement: if this job already has a task chain, append
+      // to the leaf task rather than creating a second direct job→task edge.
+      const firstTaskEdgeTarget = currentEdges
+        .find((e) => e.source === input.anchorNodeId && taskNodeIds.has(e.target))
+        ?.target;
+      if (firstTaskEdgeTarget) {
+        // Walk the task chain to find the leaf
+        let leafId = firstTaskEdgeTarget;
+        let nextId: string | undefined;
+        do {
+          nextId = currentEdges
+            .find((e) => e.source === leafId && taskNodeIds.has(e.target))
+            ?.target;
+          if (nextId) { leafId = nextId; }
+        } while (nextId);
+        anchorId = leafId;
+      } else {
+        anchorId = input.anchorNodeId;
+      }
+    } else {
+      anchorId = input.anchorNodeId;
+    }
   } else if (leafTasks.length > 0) {
     // Pick the leaf with the highest Y (last in the visual chain)
     anchorId = leafTasks.sort((a, b) => b.position.y - a.position.y)[0].id;
@@ -400,17 +424,38 @@ export function insertTaskNode(
   }
 
   const newId = `task-ctx-${Date.now()}`;
-  const newNode: Node<GraphNodeData> = {
-    id: newId,
-    type: 'task',
-    position,
-    data: {
-      kind: 'task',
-      label: input.taskName,
-      rawId: input.taskName,
-      details: { taskName: input.taskName },
-    },
-  };
+  const nodeKind = input.nodeKind ?? 'task';
+
+  let newNode: Node<GraphNodeData>;
+  if (nodeKind === 'checkout') {
+    // Strip 'checkout: ' prefix if present — the catalog entry name IS the full label
+    const ref = input.taskName.startsWith('checkout: ')
+      ? input.taskName.slice('checkout: '.length)
+      : input.taskName;
+    newNode = {
+      id: newId,
+      type: 'checkout',
+      position,
+      data: {
+        kind: 'checkout',
+        label: `checkout: ${ref}`,
+        rawId: `checkout: ${ref}`,
+        details: { taskName: ref, stepKind: 'checkout' },
+      },
+    };
+  } else {
+    newNode = {
+      id: newId,
+      type: 'task',
+      position,
+      data: {
+        kind: 'task',
+        label: input.taskName,
+        rawId: input.taskName,
+        details: { taskName: input.taskName },
+      },
+    };
+  }
 
   return {
     nodes: [...currentNodes, newNode],

@@ -1337,6 +1337,51 @@ stages:
     expect(newEdge!.source).toBe(jobA.id);
   });
 
+  describe('1:1 job→task enforcement', () => {
+    it('appends to the leaf task (not the job) when job already has one task', () => {
+      const yaml = `jobs:\n  - job: J\n    steps:\n      - task: A@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const job = nodes.find((n) => n.data.kind === 'job')!;
+      const taskA = nodes.find((n) => n.data.rawId === 'A@1')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'B@1', anchorNodeId: job.id });
+      const newTask = result.nodes[result.nodes.length - 1];
+      const newEdge = result.edges.find((e) => e.target === newTask.id);
+      expect(newEdge!.source).toBe(taskA.id);  // chains from A, not from the job
+    });
+
+    it('appends to the last leaf when job has a multi-task chain', () => {
+      const yaml = `jobs:\n  - job: J\n    steps:\n      - task: A@1\n      - task: B@1\n      - task: C@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const job = nodes.find((n) => n.data.kind === 'job')!;
+      const taskC = nodes.find((n) => n.data.rawId === 'C@1')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'D@1', anchorNodeId: job.id });
+      const newTask = result.nodes[result.nodes.length - 1];
+      const newEdge = result.edges.find((e) => e.target === newTask.id);
+      expect(newEdge!.source).toBe(taskC.id);  // chains from C (the leaf), not the job
+    });
+
+    it('connects directly to the job when it has no tasks yet', () => {
+      const yaml = `jobs:\n  - job: J\n    steps: []`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const job = nodes.find((n) => n.data.kind === 'job')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'A@1', anchorNodeId: job.id });
+      const newTask = result.nodes[result.nodes.length - 1];
+      const newEdge = result.edges.find((e) => e.target === newTask.id);
+      expect(newEdge!.source).toBe(job.id);
+    });
+
+    it('does not create a second direct job→task edge', () => {
+      const yaml = `jobs:\n  - job: J\n    steps:\n      - task: A@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const job = nodes.find((n) => n.data.kind === 'job')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'B@1', anchorNodeId: job.id });
+      const directJobToTaskEdges = result.edges.filter(
+        (e) => e.source === job.id && result.nodes.find((n) => n.id === e.target && n.data.kind === 'task')
+      );
+      expect(directJobToTaskEdges).toHaveLength(1);  // still exactly one job→task edge
+    });
+  });
+
   it('wires new task to explicit anchorNodeId when provided (task anchor — sequential drag)', () => {
     // Simulate dragging an edge off an existing task to chain a new one after it.
     const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
@@ -1348,6 +1393,49 @@ stages:
     const newEdge = result.edges.find((e) => e.target === newTask.id);
     expect(newEdge).toBeDefined();
     expect(newEdge!.source).toBe(taskA.id);
+  });
+
+  describe('checkout node insertion', () => {
+    it('creates a checkout node with kind checkout', () => {
+      const result = insertTaskNode([], [], { taskName: 'checkout: self', nodeKind: 'checkout' });
+      const node = result.nodes[0];
+      expect(node.data.kind).toBe('checkout');
+      expect(node.type).toBe('checkout');
+    });
+
+    it('sets rawId to "checkout: self" for self checkout', () => {
+      const result = insertTaskNode([], [], { taskName: 'checkout: self', nodeKind: 'checkout' });
+      expect(result.nodes[0].data.rawId).toBe('checkout: self');
+    });
+
+    it('sets rawId to "checkout: none" for none checkout', () => {
+      const result = insertTaskNode([], [], { taskName: 'checkout: none', nodeKind: 'checkout' });
+      expect(result.nodes[0].data.rawId).toBe('checkout: none');
+    });
+
+    it('stores the ref in details.taskName (strips "checkout: " prefix)', () => {
+      const result = insertTaskNode([], [], { taskName: 'checkout: self', nodeKind: 'checkout' });
+      expect(result.nodes[0].data.details?.['taskName']).toBe('self');
+    });
+
+    it('sets details.stepKind to "checkout"', () => {
+      const result = insertTaskNode([], [], { taskName: 'checkout: self', nodeKind: 'checkout' });
+      expect(result.nodes[0].data.details?.['stepKind']).toBe('checkout');
+    });
+
+    it('serialises checkout: self node to correct YAML', () => {
+      const { nodes: n, edges: e } = insertTaskNode([], [], { taskName: 'checkout: self', nodeKind: 'checkout' });
+      const yaml = graphToPipeline(n, e);
+      const parsed = jsYaml.load(yaml) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['checkout']).toBe('self');
+    });
+
+    it('serialises checkout: none node to correct YAML', () => {
+      const { nodes: n, edges: e } = insertTaskNode([], [], { taskName: 'checkout: none', nodeKind: 'checkout' });
+      const yaml = graphToPipeline(n, e);
+      const parsed = jsYaml.load(yaml) as { steps: Array<Record<string, unknown>> };
+      expect(parsed.steps[0]['checkout']).toBe('none');
+    });
   });
 });
 

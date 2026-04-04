@@ -210,6 +210,9 @@ export interface CatalogTask {
   name: string;
   friendlyName: string;
   category: string;
+  /** When set, inserting this entry creates a node of this kind instead of 'task'.
+   *  Used for built-in entries such as checkout steps. */
+  nodeKind?: GraphNodeKind;
 }
 
 /**

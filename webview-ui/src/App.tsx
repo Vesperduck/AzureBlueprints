@@ -100,9 +100,13 @@ export default function App() {
           setParseError(msg);
         }
       } else if (message.type === 'taskCatalogReady') {
-        // Populate the in-canvas context menu with the fetched catalog.
+        // Prepend built-in step types, then append the fetched ADO catalog.
+        const BUILTIN_TASKS: import('./types/pipeline').CatalogTask[] = [
+          { name: 'checkout: self',       friendlyName: 'Checkout repository',   category: 'Source Control', nodeKind: 'checkout' },
+          { name: 'checkout: none',       friendlyName: 'Skip checkout',          category: 'Source Control', nodeKind: 'checkout' },
+        ];
         setContextMenu((prev) =>
-          prev ? { ...prev, loading: false, tasks: message.tasks } : null
+          prev ? { ...prev, loading: false, tasks: [...BUILTIN_TASKS, ...message.tasks] } : null
         );
       } else if (message.type === 'taskInputsReady') {
         // Cache the schema and update the panel if this task is still selected.
@@ -194,7 +198,7 @@ export default function App() {
     const { nodes: n, edges: e } = insertTaskNode(
       nodesRef.current,
       edgesRef.current,
-      { taskName: task.name, anchorNodeId }
+      { taskName: task.name, anchorNodeId, nodeKind: task.nodeKind }
     );
     setNodes(n);
     setEdges(e);
