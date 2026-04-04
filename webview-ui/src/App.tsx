@@ -4,6 +4,7 @@ import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
 import PropertiesPanel from './components/panels/PropertiesPanel';
 import ContextTaskMenu from './components/ContextTaskMenu';
+import ContextEdgeMenu, { type EdgeDropChoice } from './components/ContextEdgeMenu';
 import ContextTriggerMenu from './components/ContextTriggerMenu';
 import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, type TriggerType } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
@@ -28,6 +29,17 @@ export default function App() {
 
   // Trigger creation menu — shown when there is no trigger node yet
   const [triggerMenu, setTriggerMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Edge-drop menu — shown when user drags from a stage or job onto empty space
+  const [edgeDropMenu, setEdgeDropMenu] = useState<{
+    x: number;
+    y: number;
+    sourceNodeId: string;
+    sourceLabel: string;
+    sourceKind: 'stage' | 'job';
+    flowX: number;
+    flowY: number;
+  } | null>(null);
 
   // Count of edit messages we've sent that haven't been echoed back yet.
   // Each sent edit increments this; each incoming update decrements and is
@@ -201,15 +213,96 @@ export default function App() {
     handleGraphChange(n, e);
   }, [handleGraphChange]);
 
-  // Called by PipelineGraph when the user drags an edge from a job or task and
-  // drops it on empty space — show the task catalog menu, remembering the source node.
-  const handleNodeConnectEnd = useCallback(
+  // Called by PipelineGraph when the user drags an edge from a task node onto empty space.
+  const handleTaskConnectEnd = useCallback(
     (sourceNodeId: string, clientX: number, clientY: number) => {
       jobDragSourceRef.current = sourceNodeId;
       setContextMenu({ x: clientX, y: clientY, loading: true, tasks: [] });
       vscode.postMessage({ type: 'requestTaskCatalog' });
     },
     []
+  );
+
+  // Called by PipelineGraph when the user drags an edge from a stage or job onto empty space.
+  const handleEdgeDropEnd = useCallback(
+    (sourceNodeId: string, sourceKind: 'stage' | 'job', clientX: number, clientY: number, flowX: number, flowY: number) => {
+      const sourceNode = nodesRef.current.find((n) => n.id === sourceNodeId);
+      const sourceLabel = sourceNode?.data.rawId ?? sourceNode?.data.label ?? sourceKind;
+      setEdgeDropMenu({ x: clientX, y: clientY, sourceNodeId, sourceLabel, sourceKind, flowX, flowY });
+    },
+    []
+  );
+
+  const handleEdgeDropSelect = useCallback(
+    (choice: EdgeDropChoice) => {
+      if (!edgeDropMenu) { return; }
+      const { sourceNodeId, sourceLabel, sourceKind, flowX, flowY } = edgeDropMenu;
+      setEdgeDropMenu(null);
+      const position = { x: flowX, y: flowY };
+
+      if (choice === 'task') {
+        // Open the task catalog; the selected task will be wired to the source job.
+        jobDragSourceRef.current = sourceNodeId;
+        setContextMenu({ x: edgeDropMenu.x, y: edgeDropMenu.y, loading: true, tasks: [] });
+        vscode.postMessage({ type: 'requestTaskCatalog' });
+        return;
+      }
+
+      if (choice === 'job') {
+        const newId = `job-${Date.now()}`;
+        const newNode = {
+          id: newId,
+          type: 'job' as const,
+          position,
+          data: {
+            kind: 'job' as const,
+            label: 'New Job',
+            rawId: 'NewJob',
+            // When dragging from a job, the new job depends on that job
+            ...(sourceKind === 'job' ? { dependsOn: [sourceLabel] } : {}),
+          },
+        };
+        const newEdge = {
+          id: `e-${sourceNodeId}-${newId}`,
+          source: sourceNodeId,
+          target: newId,
+          animated: true,
+          style: { stroke: '#0078d4', strokeWidth: 2 },
+        };
+        const n = [...nodesRef.current, newNode];
+        const e = [...edgesRef.current, newEdge];
+        setNodes(n);
+        setEdges(e);
+        handleGraphChange(n, e);
+      } else {
+        // choice === 'stage': new stage that depends on the source stage
+        const newId = `stage-${Date.now()}`;
+        const newNode = {
+          id: newId,
+          type: 'stage' as const,
+          position,
+          data: {
+            kind: 'stage' as const,
+            label: 'New Stage',
+            rawId: 'NewStage',
+            dependsOn: [sourceLabel],
+          },
+        };
+        const newEdge = {
+          id: `e-${sourceNodeId}-${newId}`,
+          source: sourceNodeId,
+          target: newId,
+          animated: true,
+          style: { stroke: '#0078d4', strokeWidth: 2 },
+        };
+        const n = [...nodesRef.current, newNode];
+        const e = [...edgesRef.current, newEdge];
+        setNodes(n);
+        setEdges(e);
+        handleGraphChange(n, e);
+      }
+    },
+    [edgeDropMenu, handleGraphChange]
   );
 
   // Derive the currently selected node from live `nodes` state so the
@@ -242,7 +335,8 @@ export default function App() {
           onGraphChange={handleGraphChange}
           onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
           onPaneContextMenu={handleContextMenu}
-          onNodeConnectEnd={handleNodeConnectEnd}
+          onTaskConnectEnd={handleTaskConnectEnd}
+          onEdgeDropEnd={handleEdgeDropEnd}
         />
         </ReactFlowProvider>
 
@@ -254,6 +348,17 @@ export default function App() {
             tasks={contextMenu.tasks}
             onSelect={handleTaskSelect}
             onClose={() => { jobDragSourceRef.current = null; setContextMenu(null); }}
+          />
+        )}
+
+        {edgeDropMenu && (
+          <ContextEdgeMenu
+            x={edgeDropMenu.x}
+            y={edgeDropMenu.y}
+            sourceLabel={edgeDropMenu.sourceLabel}
+            sourceKind={edgeDropMenu.sourceKind}
+            onSelect={handleEdgeDropSelect}
+            onClose={() => setEdgeDropMenu(null)}
           />
         )}
 

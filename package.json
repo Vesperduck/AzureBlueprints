@@ -1,9 +1,18 @@
 {
   "name": "azure-blueprints",
-  "displayName": "Azure Blueprints – Pipeline Graph Editor",
-  "description": "Visual node-based graph editor for Azure DevOps YAML pipelines, inspired by Unreal Engine Blueprints.",
+  "displayName": "Azure Blueprints: Pipeline Graph Editor",
+  "description": "Edit Azure DevOps YAML pipelines as a visual graph with live YAML synchronization.",
   "version": "0.1.0",
-  "publisher": "azure-blueprints",
+  "publisher": "VesperWilde",
+  "license": "MIT",
+  "homepage": "https://vesperwilde.net/extensions/azure-blueprints",
+  "bugs": {
+    "url": "https://github.com/Vesperduck/AzureBlueprints/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vesperduck/AzureBlueprints.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -11,13 +20,19 @@
     "Other",
     "Visualization"
   ],
-  "icon": "resources/icon.png",
+  "icon": "resources/AzBp_Icon128.png",
   "keywords": [
     "azure devops",
-    "pipelines",
+    "azure pipelines",
+    "pipeline",
     "yaml",
-    "graph",
-    "visual editor"
+    "yaml editor",
+    "pipeline editor",
+    "graph editor",
+    "visual pipeline",
+    "ci cd",
+    "workflow",
+    "devops"
   ],
   "activationEvents": [
     "onLanguage:yaml",

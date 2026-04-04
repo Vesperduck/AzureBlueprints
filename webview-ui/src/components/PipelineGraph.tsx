@@ -112,10 +112,15 @@ interface PipelineGraphProps {
   onGraphChange: (nodes: Node<GraphNodeData>[], edges: Edge[]) => void;
   onNodeSelect: (node: Node<GraphNodeData> | null) => void;
   onPaneContextMenu?: (x: number, y: number) => void;
-  /** Called when the user drags an edge from a job or task node and drops it on
-   *  empty space. The host should show the task catalog at the given viewport
-   *  coords and, on selection, insert a task wired to `sourceNodeId`. */
-  onNodeConnectEnd?: (sourceNodeId: string, clientX: number, clientY: number) => void;
+  /** Called when the user drags an edge from a task node and drops it on empty
+   *  space. The host should show the task catalog at the given viewport coords
+   *  and, on selection, insert a task wired to `sourceNodeId`. */
+  onTaskConnectEnd?: (sourceNodeId: string, clientX: number, clientY: number) => void;
+  /** Called when the user drags an edge from a stage or job node and drops it
+   *  on empty space. The host should show a choice menu.
+   *  `sourceKind` is `'stage'` or `'job'`; `flowX`/`flowY` are canvas-space
+   *  coordinates for placing the new node. */
+  onEdgeDropEnd?: (sourceNodeId: string, sourceKind: 'stage' | 'job', clientX: number, clientY: number, flowX: number, flowY: number) => void;
 }
 
 export default function PipelineGraph({
@@ -126,7 +131,8 @@ export default function PipelineGraph({
   onGraphChange,
   onNodeSelect,
   onPaneContextMenu,
-  onNodeConnectEnd,
+  onTaskConnectEnd,
+  onEdgeDropEnd,
 }: PipelineGraphProps) {
   // Refs kept synchronously up-to-date within the same JS tick.
   const currentNodes = useRef<Node<GraphNodeData>[]>(nodes);
@@ -268,23 +274,27 @@ export default function PipelineGraph({
       const { clientX, clientY } =
         'changedTouches' in event ? event.changedTouches[0] : (event as MouseEvent);
 
-      // Job or task source → delegate to host so the task catalog menu can be shown.
-      if (sourceKind === 'job' || isTaskKind) {
-        onNodeConnectEnd?.(connectSource.current.nodeId, clientX, clientY);
+      const position = project({ x: clientX, y: clientY });
+
+      // Task source → open task catalog directly.
+      if (isTaskKind) {
+        onTaskConnectEnd?.(connectSource.current.nodeId, clientX, clientY);
         return;
       }
 
-      const position = project({ x: clientX, y: clientY });
-      const isFromStage = sourceKind === 'stage';
-      const newKind = isFromStage ? 'job' : 'stage';
-      const newId = `${newKind}-${Date.now()}`;
+      // Stage or job source → let the host show the choice menu.
+      if (sourceKind === 'stage' || sourceKind === 'job') {
+        onEdgeDropEnd?.(connectSource.current.nodeId, sourceKind, clientX, clientY, position.x, position.y);
+        return;
+      }
+
+      // Trigger source → create a new stage inline
+      const newId = `stage-${Date.now()}`;
       const newNode: Node<GraphNodeData> = {
         id: newId,
-        type: newKind,
+        type: 'stage',
         position,
-        data: isFromStage
-          ? { kind: 'job', label: 'New Job', rawId: 'NewJob' }
-          : { kind: 'stage', label: 'New Stage', rawId: 'NewStage' },
+        data: { kind: 'stage', label: 'New Stage', rawId: 'NewStage' },
       };
       const newEdge: Edge = {
         id: `e-${connectSource.current.nodeId}-${newId}`,
@@ -300,7 +310,7 @@ export default function PipelineGraph({
       onEdgesChange(updatedEdges);
       onGraphChange(updatedNodes, updatedEdges);
     },
-    [project, onNodesChange, onEdgesChange, onGraphChange, onNodeConnectEnd]
+    [project, onNodesChange, onEdgesChange, onGraphChange, onTaskConnectEnd, onEdgeDropEnd]
   );
 
   const handleNodeClick = useCallback(

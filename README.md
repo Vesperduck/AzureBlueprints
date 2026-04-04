@@ -1,21 +1,50 @@
 # Azure Blueprints – Pipeline Graph Editor
 
-A Visual Studio Code extension that renders Azure DevOps YAML pipelines as interactive node-based graphs, inspired by Unreal Engine Blueprints. Edit the YAML and see the graph update live, or manipulate nodes and have the YAML regenerated automatically.
+Azure Blueprints is a visual graph editor for Azure DevOps YAML pipelines. Open a pipeline file, view triggers, stages, jobs, and tasks as connected nodes, and edit the graph with live synchronization back to YAML.
 
 ## Features
 
-- **Visual graph editor** – Stages, jobs, and tasks rendered as connected nodes using ReactFlow.
-- **Bidirectional sync** – YAML ↔ graph conversion kept in sync; edits in either direction are reflected in the other.
-- **Context task menu** – Right-click any node to insert a step from the Azure DevOps task catalog.
-- **Task catalog** – Fetches available pipeline tasks from your Azure DevOps organisation (OAuth via VS Code built-in Microsoft account).
-- **Properties panel** – Select a node to view and edit its properties.
-- **Custom editor** – Registered for `azure-pipelines*.yml` and `*.pipeline.yml`; also launchable via the command palette.
-- **Trigger creation menu** – Right-clicking an empty canvas when no trigger node exists shows a menu to choose a trigger type (CI, PR, Scheduled, Manual, or None).
-- **CI trigger properties** – CI trigger nodes expose Branches (include/exclude), Paths (include/exclude), Tags (include/exclude), and the Batch flag in the Properties panel.
-- **Schedule trigger properties** — Scheduled trigger nodes expose the cron expression, schedule name, Branches (include/exclude), Always, and Batch fields in the Properties panel.
-- **PR trigger properties** — PR trigger nodes expose Branches (include/exclude), Paths (include/exclude), Auto Cancel, and Drafts in the Properties panel.
-- **Full task step editing** — Selecting a task node shows all editable fields for its step kind: task reference/inputs/env/retry count for `task:` steps; script content/working directory/env/fail-on-stderr for `script:`/`bash:`/`powershell:` steps (with a type selector); fetch depth/submodules/LFS/path/persistCredentials for `checkout:` steps; publish path and artifact for `publish:`; and download ref, artifact, path, and patterns for `download:` steps. All fields round-trip through the YAML converter.
-- **Task input schema** — When a `task:` node is selected, the extension fetches the task's input definitions from the Azure DevOps REST API (reusing the existing catalog fetch; no extra network call). The Properties panel renders structured fields (text inputs, checkboxes, dropdowns, textareas) grouped by `groupName`, replacing the raw YAML textarea. Input changes are round-tripped through `details.inputsRaw` so the YAML converter is unaffected. Schema results are cached per task ref for the session.
+- **Visual pipeline graph** – View triggers, stages, jobs, and tasks as connected nodes.
+- **Live YAML synchronization** – Edit the graph and keep Azure DevOps YAML in sync in both directions.
+- **Property editing** – Update task, trigger, and schedule settings in a side panel.
+- **Task insertion** – Add steps from your Azure DevOps task catalog.
+- **Custom editor workflow** – Open supported pipeline YAML files in a dedicated graph editor from the Explorer or command palette.
+
+## How It Works
+
+1. Open a supported Azure DevOps pipeline YAML file such as `azure-pipelines.yml`.
+2. Run **Open as Pipeline Graph Editor** from the Explorer context menu or command palette.
+3. Edit the graph and keep the YAML synchronized as you make changes.
+
+## Walkthrough
+
+### Open the graph editor
+
+![Open the graph editor](./docs/media/opening.gif)
+
+### Add the first trigger node
+
+![Add the first trigger node](./docs/media/Trigger.gif)
+
+### Add a stage
+
+![Add a stage node](./docs/media/Stage.gif)
+
+### Add a stage dependency
+
+![Add a stage dependency](./docs/media/DependsOnStage.gif)
+
+### Add a job
+
+![Add a job node](./docs/media/New%20Job.gif)
+
+### Add a job dependency
+
+![Add a job dependency](./docs/media/MakeDependsOn.gif)
+
+### Add a task
+
+![Add a task node](./docs/media/Task.gif)
 
 ## Architecture
 
@@ -74,10 +103,6 @@ npm install
 npm run build
 ```
 
-## Changelog
-
-- 2026-04-07: Added task input schema — selecting a `task:` node now fetches structured input definitions from the Azure DevOps task catalog and renders them as typed form fields (text, checkbox, select, textarea) grouped by category in the Properties panel; 5 new tests for `parseInputsRaw` (221 total).
-
 Press **F5** in VS Code to launch the extension in a new Extension Development Host window.
 
 ### Running Tests
@@ -92,8 +117,17 @@ npm test
 npm run test:coverage
 ```
 
+## Configuration
+
+- `azureBlueprints.organizationUrl` – Azure DevOps organization URL used to fetch the task catalog, for example `https://dev.azure.com/myorg`.
+
 ## Changelog
 
+- 2026-04-07: Added task input schema — selecting a `task:` node now fetches structured input definitions from the Azure DevOps task catalog and renders them as typed form fields (text, checkbox, select, textarea) grouped by category in the Properties panel; 5 new tests for `parseInputsRaw` (221 total).
+
+## Changelog
+
+- 2026-04-04: Switched the project to MIT open-source licensing, added public GitHub repository metadata, and updated the marketplace listing/support links for public distribution.
 - 2026-04-02: Initial README generated from codebase.
 - 2026-04-02: Fixed double-delete bug in PipelineGraph — node deletions now correctly sync the YAML in one keypress for both isolated nodes and nodes with connected edges.
 - 2026-04-02: Fixed node deletion not immediately updating YAML — ReactFlow fires `onEdgesChange` before `onNodesChange` during deletion; edge removals now defer their `onGraphChange` call so `handleNodesChange` can cancel it and write the YAML once with both correct nodes and edges.

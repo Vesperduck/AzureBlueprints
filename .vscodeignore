@@ -1,4 +1,11 @@
-out/
 node_modules/
 .vscode-test/
 *.vsix
+src/
+webview-ui/src/
+__mocks__/
+jest.config.js
+tsconfig.json
+tsconfig.test.json
+tsconfig.webview.json
+webpack.config.js
