@@ -410,6 +410,18 @@ export function insertTaskNode(
       } else {
         anchorId = input.anchorNodeId;
       }
+    } else if (anchorNode && taskNodeIds.has(anchorNode.id)) {
+      // 1:1 task→task enforcement: walk forward from the anchor task to the
+      // leaf so the new task is appended at the end of the chain.
+      let leafId = anchorNode.id;
+      let nextId: string | undefined;
+      do {
+        nextId = currentEdges
+          .find((e) => e.source === leafId && taskNodeIds.has(e.target))
+          ?.target;
+        if (nextId) { leafId = nextId; }
+      } while (nextId);
+      anchorId = leafId;
     } else {
       anchorId = input.anchorNodeId;
     }

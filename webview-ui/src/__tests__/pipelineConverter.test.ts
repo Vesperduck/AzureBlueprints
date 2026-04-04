@@ -1383,16 +1383,64 @@ stages:
   });
 
   it('wires new task to explicit anchorNodeId when provided (task anchor — sequential drag)', () => {
-    // Simulate dragging an edge off an existing task to chain a new one after it.
+    // With 1:1 enforcement, dragging from a non-leaf task walks to the leaf.
     const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
     const { nodes, edges } = pipelineToGraph(yaml);
     const taskA = nodes.find((n) => n.data.rawId === 'A@1')!;
-    // Drag from A@1 (not the leaf) — anchor forces connection from A@1
+    const taskB = nodes.find((n) => n.data.rawId === 'B@1')!;
+    // Drag from A@1 — 1:1 enforcement walks to the leaf (B@1) and connects from there
     const result = insertTaskNode(nodes, edges, { taskName: 'C@1', anchorNodeId: taskA.id });
     const newTask = result.nodes[result.nodes.length - 1];
     const newEdge = result.edges.find((e) => e.target === newTask.id);
     expect(newEdge).toBeDefined();
-    expect(newEdge!.source).toBe(taskA.id);
+    expect(newEdge!.source).toBe(taskB.id);
+  });
+
+  describe('1:1 task→task enforcement', () => {
+    it('appends to the leaf when anchor task already has one successor', () => {
+      // A→B exists; dragging from A should append C after B (the leaf), not fork from A.
+      const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const taskA = nodes.find((n) => n.data.rawId === 'A@1')!;
+      const taskB = nodes.find((n) => n.data.rawId === 'B@1')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'C@1', anchorNodeId: taskA.id });
+      const newTask = result.nodes[result.nodes.length - 1];
+      const newEdge = result.edges.find((e) => e.target === newTask.id);
+      expect(newEdge!.source).toBe(taskB.id);
+    });
+
+    it('appends to the last leaf in a multi-task chain from a mid-chain anchor', () => {
+      // A→B→C exists; dragging from A should append D after C (the leaf).
+      const yaml = `steps:\n  - task: A@1\n  - task: B@1\n  - task: C@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const taskA = nodes.find((n) => n.data.rawId === 'A@1')!;
+      const taskC = nodes.find((n) => n.data.rawId === 'C@1')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'D@1', anchorNodeId: taskA.id });
+      const newTask = result.nodes[result.nodes.length - 1];
+      const newEdge = result.edges.find((e) => e.target === newTask.id);
+      expect(newEdge!.source).toBe(taskC.id);
+    });
+
+    it('connects directly to the anchor task when it has no successor', () => {
+      // B is the current leaf; dragging from B should attach C directly to B.
+      const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const taskB = nodes.find((n) => n.data.rawId === 'B@1')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'C@1', anchorNodeId: taskB.id });
+      const newTask = result.nodes[result.nodes.length - 1];
+      const newEdge = result.edges.find((e) => e.target === newTask.id);
+      expect(newEdge!.source).toBe(taskB.id);
+    });
+
+    it('does not create a fork — anchor task has exactly one outgoing edge after insert', () => {
+      // A→B exists; inserting with anchor=A should NOT create A→C (a fork)
+      const yaml = `steps:\n  - task: A@1\n  - task: B@1`;
+      const { nodes, edges } = pipelineToGraph(yaml);
+      const taskA = nodes.find((n) => n.data.rawId === 'A@1')!;
+      const result = insertTaskNode(nodes, edges, { taskName: 'C@1', anchorNodeId: taskA.id });
+      const outgoingFromA = result.edges.filter((e) => e.source === taskA.id);
+      expect(outgoingFromA).toHaveLength(1); // A still has exactly one outgoing edge
+    });
   });
 
   describe('checkout node insertion', () => {

@@ -7,7 +7,9 @@ Azure Blueprints is a visual graph editor for Azure DevOps YAML pipelines. Open 
 - **Visual pipeline graph** – View triggers, stages, jobs, and tasks as connected nodes.
 - **Live YAML synchronization** – Edit the graph and keep Azure DevOps YAML in sync in both directions.
 - **Property editing** – Update task, trigger, and schedule settings in a side panel.
-- **Task insertion** – Add steps from your Azure DevOps task catalog.
+- **Task insertion** – Add steps from your Azure DevOps task catalog, including built-in `checkout: self` and `checkout: none` nodes.
+- **Edge-drop context menu** – Drag from a stage or job node to choose whether to add a dependent stage, a job inside a stage, or a new task from the catalog.
+- **Multiplicity constraints** – Job→task and task→task connections are 1:1: inserting or dragging automatically appends to the end of the chain rather than forking it.
 - **Custom editor workflow** – Open supported pipeline YAML files in a dedicated graph editor from the Explorer or command palette.
 
 ## How It Works
@@ -58,6 +60,7 @@ Azure Blueprints is a visual graph editor for Azure DevOps YAML pipelines. Open 
 | [webview-ui/src/components/PipelineGraph.tsx](webview-ui/src/components/PipelineGraph.tsx) | ReactFlow canvas with node/edge rendering |
 | [webview-ui/src/components/PropertiesPanel.tsx](webview-ui/src/components/PropertiesPanel.tsx) | Sidebar panel for selected node properties |
 | [webview-ui/src/components/ContextTaskMenu.tsx](webview-ui/src/components/ContextTaskMenu.tsx) | Right-click menu for inserting pipeline tasks |
+| [webview-ui/src/components/ContextEdgeMenu.tsx](webview-ui/src/components/ContextEdgeMenu.tsx) | Edge-drop context menu shown when dragging from a stage or job node |
 | [webview-ui/src/components/ContextTriggerMenu.tsx](webview-ui/src/components/ContextTriggerMenu.tsx) | Right-click menu shown on empty canvas to select a trigger type |
 
 ## API / Exports
