@@ -1,7 +1,7 @@
 name: Release on PR Merge
 
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
     branches:
       - main
@@ -54,7 +54,7 @@ jobs:
             echo "type=patch" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Bump version, commit, and push (with retry on conflict)
+      - name: Bump version, build VSIX, commit, and push (with retry on conflict)
         id: commit
         run: |
           git config user.name "github-actions[bot]"
@@ -65,6 +65,7 @@ jobs:
             git reset --hard origin/main
             npm version ${{ steps.bump.outputs.type }} --no-git-tag-version
             VERSION=$(node -p "require('./package.json').version")
+            npx @vscode/vsce@3.3.2 package --no-dependencies
             git add package.json package-lock.json
             git commit -m "chore: bump version to v${VERSION} [skip ci]"
             if git push origin HEAD:main; then
@@ -77,9 +78,6 @@ jobs:
             git checkout -- package.json package-lock.json
             [ "${attempt}" -eq "$MAX_ATTEMPTS" ] && { echo "All push attempts failed"; exit 1; }
           done
-
-      - name: Build VSIX
-        run: npx @vscode/vsce package --no-dependencies
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
