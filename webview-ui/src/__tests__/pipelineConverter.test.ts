@@ -1485,6 +1485,38 @@ stages:
       expect(parsed.steps[0]['checkout']).toBe('none');
     });
   });
+
+  describe('script node insertion', () => {
+    it('creates a script node with kind script', () => {
+      const result = insertTaskNode([], [], { taskName: 'script', nodeKind: 'script' });
+      const node = result.nodes[0];
+      expect(node.data.kind).toBe('script');
+      expect(node.type).toBe('script');
+    });
+
+    it('sets rawId to "script"', () => {
+      const result = insertTaskNode([], [], { taskName: 'script', nodeKind: 'script' });
+      expect(result.nodes[0].data.rawId).toBe('script');
+    });
+
+    it('sets details.stepKind to "script"', () => {
+      const result = insertTaskNode([], [], { taskName: 'script', nodeKind: 'script' });
+      expect(result.nodes[0].data.details?.['stepKind']).toBe('script');
+    });
+
+    it('initialises taskName (script body) to empty string', () => {
+      const result = insertTaskNode([], [], { taskName: 'script', nodeKind: 'script' });
+      expect(result.nodes[0].data.details?.['taskName']).toBe('');
+    });
+
+    it('serialises script node to a YAML script step', () => {
+      const { nodes: n, edges: e } = insertTaskNode([], [], { taskName: 'script', nodeKind: 'script' });
+      const yaml = graphToPipeline(n, e);
+      const parsed = jsYaml.load(yaml) as { steps: Array<Record<string, unknown>> };
+      // An empty script body still produces a "script:" key
+      expect(parsed.steps[0]).toHaveProperty('script');
+    });
+  });
 });
 
 // ── insertTriggerNode ──────────────────────────────────────────────────────────────

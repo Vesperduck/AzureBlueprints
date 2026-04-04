@@ -104,6 +104,7 @@ export default function App() {
         const BUILTIN_TASKS: import('./types/pipeline').CatalogTask[] = [
           { name: 'checkout: self',       friendlyName: 'Checkout repository',   category: 'Source Control', nodeKind: 'checkout' },
           { name: 'checkout: none',       friendlyName: 'Skip checkout',          category: 'Source Control', nodeKind: 'checkout' },
+          { name: 'script',               friendlyName: 'Script',                 category: 'Utility',        nodeKind: 'script'   },
         ];
         setContextMenu((prev) =>
           prev ? { ...prev, loading: false, tasks: [...BUILTIN_TASKS, ...message.tasks] } : null

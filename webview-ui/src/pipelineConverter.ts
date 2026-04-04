@@ -455,6 +455,18 @@ export function insertTaskNode(
         details: { taskName: ref, stepKind: 'checkout' },
       },
     };
+  } else if (nodeKind === 'script') {
+    newNode = {
+      id: newId,
+      type: 'script',
+      position,
+      data: {
+        kind: 'script',
+        label: 'Script',
+        rawId: 'script',
+        details: { taskName: '', stepKind: 'script' },
+      },
+    };
   } else {
     newNode = {
       id: newId,
