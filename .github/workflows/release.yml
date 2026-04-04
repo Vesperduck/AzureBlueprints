@@ -21,9 +21,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sync local main with origin/main
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
