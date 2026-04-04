@@ -1,0 +1,89 @@
+name: Release on PR Merge
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync local main with origin/main
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Determine version bump type
+        id: bump
+        run: |
+          LABELS=$(echo '${{ toJson(github.event.pull_request.labels.*.name) }}' | tr -d '[]"' | tr ',' ' ')
+          if echo "$LABELS" | grep -qw "release:major"; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          elif echo "$LABELS" | grep -qw "release:minor"; then
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump version, build VSIX, commit, and push (with retry on conflict)
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          MAX_ATTEMPTS=5
+          for attempt in $(seq 1 $MAX_ATTEMPTS); do
+            git fetch origin main
+            git reset --hard origin/main
+            npm version ${{ steps.bump.outputs.type }} --no-git-tag-version
+            VERSION=$(node -p "require('./package.json').version")
+            npx @vscode/vsce@3.3.2 package --no-dependencies
+            git add package.json package-lock.json
+            git commit -m "chore: bump version to v${VERSION} [skip ci]"
+            if git push origin HEAD:main; then
+              echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              break
+            fi
+            echo "Push failed (attempt ${attempt}), retrying..."
+            git reset HEAD~1
+            git checkout -- package.json package-lock.json
+            [ "${attempt}" -eq "$MAX_ATTEMPTS" ] && { echo "All push attempts failed"; exit 1; }
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.commit.outputs.version }}
+          name: v${{ steps.commit.outputs.version }}
+          target_commitish: ${{ steps.commit.outputs.sha }}
+          generate_release_notes: true
+          files: "*.vsix"
