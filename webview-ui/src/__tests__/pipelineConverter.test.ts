@@ -2366,3 +2366,120 @@ describe('parseInputsRaw', () => {
     expect(parseInputsRaw('- item1\n- item2')).toEqual({});
   });
 });
+
+// ── Template node support ─────────────────────────────────────────────────────
+
+describe('template nodes', () => {
+  // ── Parsing ──────────────────────────────────────────────────────────────
+
+  it('parses a stage-level template', () => {
+    const yaml = 'trigger: none\nstages:\n  - template: templates/my-stage.yml';
+    const { nodes } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template');
+    expect(tNode).toBeDefined();
+    expect(tNode!.data.details?.['templatePath']).toBe('templates/my-stage.yml');
+    expect(tNode!.data.details?.['templateLevel']).toBe('stage');
+  });
+
+  it('parses a stage-level template with parameters', () => {
+    const yaml = 'trigger: none\nstages:\n  - template: templates/my-stage.yml\n    parameters:\n      env: production';
+    const { nodes } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template');
+    expect(tNode!.data.details?.['parametersRaw']).toContain('env: production');
+  });
+
+  it('parses a job-level template inside a stage', () => {
+    const yaml = 'trigger: none\nstages:\n  - stage: Build\n    jobs:\n      - template: templates/build-job.yml';
+    const { nodes } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template');
+    expect(tNode).toBeDefined();
+    expect(tNode!.data.details?.['templatePath']).toBe('templates/build-job.yml');
+    expect(tNode!.data.details?.['templateLevel']).toBe('job');
+  });
+
+  it('parses a job-level template in a jobs-only pipeline', () => {
+    const yaml = 'trigger: none\njobs:\n  - template: templates/build-job.yml';
+    const { nodes } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template');
+    expect(tNode).toBeDefined();
+    expect(tNode!.data.details?.['templateLevel']).toBe('job');
+  });
+
+  it('parses a step-level template inside a job', () => {
+    const yaml = 'trigger: none\nstages:\n  - stage: Build\n    jobs:\n      - job: BuildJob\n        steps:\n          - template: templates/install.yml';
+    const { nodes } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template');
+    expect(tNode).toBeDefined();
+    expect(tNode!.data.details?.['templateLevel']).toBe('step');
+  });
+
+  it('parses a step-level template in a steps-only pipeline', () => {
+    const yaml = 'trigger: none\nsteps:\n  - template: templates/install.yml';
+    const { nodes } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template');
+    expect(tNode).toBeDefined();
+    expect(tNode!.data.details?.['templatePath']).toBe('templates/install.yml');
+    expect(tNode!.data.details?.['templateLevel']).toBe('step');
+  });
+
+  it('parses mixed regular stages and stage templates', () => {
+    const yaml = 'trigger: none\nstages:\n  - stage: Build\n    jobs: []\n  - template: templates/deploy.yml';
+    const { nodes } = pipelineToGraph(yaml);
+    expect(nodes.filter((n) => n.data.kind === 'stage')).toHaveLength(1);
+    expect(nodes.filter((n) => n.data.kind === 'template')).toHaveLength(1);
+  });
+
+  // ── Serialisation ─────────────────────────────────────────────────────────
+
+  it('round-trips a stage-level template', () => {
+    const yaml = 'trigger: none\nstages:\n  - template: templates/my-stage.yml';
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    expect(out).toContain('template: templates/my-stage.yml');
+  });
+
+  it('round-trips a stage-level template with parameters', () => {
+    const yaml = 'trigger: none\nstages:\n  - template: templates/my-stage.yml\n    parameters:\n      env: production';
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    expect(out).toContain('template: templates/my-stage.yml');
+    expect(out).toContain('env: production');
+  });
+
+  it('round-trips a job-level template inside a stage', () => {
+    const yaml = 'trigger: none\nstages:\n  - stage: Build\n    jobs:\n      - template: templates/build-job.yml';
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    expect(out).toContain('template: templates/build-job.yml');
+  });
+
+  it('round-trips a step-level template in a steps-only pipeline', () => {
+    const yaml = 'trigger: none\nsteps:\n  - template: templates/install.yml\n    parameters:\n      version: \'3.0\'';
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    expect(out).toContain('template: templates/install.yml');
+    expect(out).toContain('version:');
+  });
+
+  it('round-trips a step-level template mixed with regular steps', () => {
+    const yaml = 'trigger: none\nsteps:\n  - template: templates/install.yml\n  - script: echo hello';
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const out = graphToPipeline(nodes, edges);
+    expect(out).toContain('template: templates/install.yml');
+    expect(out).toContain('script: echo hello');
+  });
+
+  it('preserves templatePath in serialised output when path is edited via details', () => {
+    const yaml = 'trigger: none\nsteps:\n  - template: templates/old.yml';
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const tNode = nodes.find((n) => n.data.kind === 'template')!;
+    const updatedNodes = nodes.map((n) =>
+      n.id === tNode.id
+        ? { ...n, data: { ...n.data, details: { ...n.data.details, templatePath: 'templates/new.yml' } } }
+        : n
+    );
+    const out = graphToPipeline(updatedNodes, edges);
+    expect(out).toContain('template: templates/new.yml');
+    expect(out).not.toContain('templates/old.yml');
+  });
+});

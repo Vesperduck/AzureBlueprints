@@ -146,3 +146,6 @@
 
 .node--download .node__header { background: #00ced122; color: #80deea; }
 .node--download               { border-color: #00a0a5; }
+
+.node--template .node__header { background: #6e4fb322; color: #c4a8f5; }
+.node--template               { border: 2px dashed #6e4fb3; background: #1a1228; min-width: 200px; }

@@ -92,6 +92,18 @@ Looks up the cached input schema for a task reference (e.g. `DotNetCoreCLI@2`). 
 ### `parseInputsRaw(raw: string | undefined): Record<string, string>`
 Parses a YAML map string (the `inputsRaw` field stored on task nodes) into a plain `Record<string, string>`. All values are coerced to strings. Returns `{}` for `undefined`, malformed YAML, or YAML that is not a mapping.
 
+## Template node architecture
+
+Template references in Azure DevOps YAML (`- template: path.yml`) are parsed at all three pipeline levels:
+
+| Level | YAML context | Graph column | Node `templateLevel` |
+|-------|-------------|-------------|---------------------|
+| Stage | `stages:` list | Stage (col 0) | `'stage'` |
+| Job | `jobs:` list (inside a stage or top-level) | Job (col 1) | `'job'` |
+| Step | `steps:` list | Task (col 2) | `'step'` |
+
+Template nodes store `details.templatePath` (the file path string) and `details.parametersRaw` (YAML-encoded parameters). Editing either field in the Properties panel immediately re-serializes the YAML.
+
 ## Getting Started
 
 ### Prerequisites
@@ -127,6 +139,7 @@ npm run test:coverage
 ## Changelog
 
 - 2026-04-07: Added task input schema — selecting a `task:` node now fetches structured input definitions from the Azure DevOps task catalog and renders them as typed form fields (text, checkbox, select, textarea) grouped by category in the Properties panel; 5 new tests for `parseInputsRaw` (221 total).
+- 2026-04-07: Added template node support — stage, job, and step template references (`- template: path.yml`) are now parsed, displayed as distinct purple nodes, and round-trip through the YAML converter with full `parameters:` block support; 13 new tests (254 total).
 
 ## Changelog
 

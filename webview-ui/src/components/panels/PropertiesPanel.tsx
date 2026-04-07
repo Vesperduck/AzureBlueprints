@@ -132,7 +132,8 @@ export default function PropertiesPanel({
   const isStageOrJob    = data.kind === 'stage' || data.kind === 'job';
   const isStage         = data.kind === 'stage';
   const isJob           = data.kind === 'job';
-  const isNotTrigger    = data.kind !== 'trigger';
+  const isTemplate      = data.kind === 'template';
+  const isNotTrigger    = data.kind !== 'trigger' && data.kind !== 'template';
   const isTrigger       = data.kind === 'trigger';
   const triggerType     = (data.details?.['triggerType'] as string | undefined) ?? 'none';
   const isScheduled     = isTrigger && triggerType === 'scheduled';
@@ -147,6 +148,8 @@ export default function PropertiesPanel({
   const isCheckout      = data.kind === 'checkout';
   const isPublish       = data.kind === 'publish';
   const isDownload      = data.kind === 'download';
+
+  const templateLevel   = (data.details?.['templateLevel'] as string | undefined) ?? 'step';
 
   return (
     <aside className="props-panel">
@@ -396,6 +399,36 @@ export default function PropertiesPanel({
               onChange={(e) => set({ enabled: e.target.checked })}
             />
           </div>
+        )}
+
+        {/* ── Template reference ─────────────────────────────────────── */}
+        {isTemplate && (
+          <>
+            <SectionDivider label="Template" />
+            <div className="props-row">
+              <span className="props-label">Level</span>
+              <span className={`props-kind-badge props-kind--${data.kind}`}>{templateLevel}</span>
+            </div>
+            <TextField
+              id="pp-template-path"
+              label="Template Path"
+              value={(data.details?.['templatePath'] as string | undefined) ?? ''}
+              placeholder="templates/my-template.yml"
+              onChange={(v) => setDetail('templatePath', v !== '' ? v : '')}
+            />
+            <SectionDivider label="Parameters (YAML)" />
+            <div className="props-row props-row--col">
+              <textarea
+                id="pp-template-parameters"
+                className="props-input props-textarea"
+                value={(data.details?.['parametersRaw'] as string | undefined) ?? ''}
+                placeholder={'environment: production\nbuildConfig: Release'}
+                onChange={(e) => setDetail('parametersRaw', e.target.value !== '' ? e.target.value : undefined)}
+                rows={4}
+                spellCheck={false}
+              />
+            </div>
+          </>
         )}
 
         {/* ── Azure DevOps task step ──────────────────────────────────── */}
