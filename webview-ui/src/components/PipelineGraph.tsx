@@ -25,6 +25,7 @@ import TriggerNode from './nodes/TriggerNode';
 import StageNode from './nodes/StageNode';
 import JobNode from './nodes/JobNode';
 import TaskNode from './nodes/TaskNode';
+import TemplateNode from './nodes/TemplateNode';
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNode,
@@ -35,6 +36,7 @@ const nodeTypes: NodeTypes = {
   checkout: TaskNode,
   publish: TaskNode,
   download: TaskNode,
+  template: TemplateNode,
 };
 
 /**

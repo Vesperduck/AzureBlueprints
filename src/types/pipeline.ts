@@ -294,7 +294,7 @@ export interface PipelineParameter {
 
 // ─── Graph node/edge data shapes used by the webview ────────────────────────
 
-export type GraphNodeKind = 'trigger' | 'stage' | 'job' | 'task' | 'script' | 'checkout' | 'publish' | 'download';
+export type GraphNodeKind = 'trigger' | 'stage' | 'job' | 'task' | 'script' | 'checkout' | 'publish' | 'download' | 'template';
 
 export interface GraphNodeData {
   kind: GraphNodeKind;

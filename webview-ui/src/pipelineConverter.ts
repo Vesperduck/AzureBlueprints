@@ -88,6 +88,23 @@ export function pipelineToGraph(yaml: string): {
     let stageY = 0;
 
     for (const stage of pipeline.stages) {
+      // ── Stage-level template reference ─────────────────────────────────────
+      if ((stage as unknown as { template?: unknown }).template !== undefined) {
+        const stageRaw = stage as unknown as { template: string; parameters?: Record<string, unknown> };
+        const tId = nextId('template');
+        const tNode = makeNode(tId, 'template', stageRaw.template, stageRaw.template, tId, { x: STAGE_X, y: stageY });
+        tNode.data.displayName = stageRaw.template;
+        tNode.data.details = {
+          templatePath: stageRaw.template,
+          parametersRaw: stageRaw.parameters ? jsYaml.dump(stageRaw.parameters, { lineWidth: 120 }).trim() : undefined,
+          templateLevel: 'stage',
+        };
+        nodes.push(tNode);
+        edges.push(makeEdge(triggerId, tId));
+        stageY += ROW_H;
+        continue;
+      }
+
       const stageId = nextId('stage');
       const stageLabel = stage.displayName ?? stage.stage ?? 'Stage';
 
@@ -136,6 +153,23 @@ export function pipelineToGraph(yaml: string): {
       let jobY = stageY;
 
       for (const job of stageJobs) {
+        // ── Job-level template reference ──────────────────────────────────────
+        if ((job as unknown as { template?: unknown }).template !== undefined) {
+          const jobRaw = job as unknown as { template: string; parameters?: Record<string, unknown> };
+          const tId = nextId('template');
+          const tNode = makeNode(tId, 'template', jobRaw.template, jobRaw.template, tId, { x: JOB_X, y: jobY });
+          tNode.data.displayName = jobRaw.template;
+          tNode.data.parentId = stageId;
+          tNode.data.details = {
+            templatePath: jobRaw.template,
+            parametersRaw: jobRaw.parameters ? jsYaml.dump(jobRaw.parameters, { lineWidth: 120 }).trim() : undefined,
+            templateLevel: 'job',
+          };
+          nodes.push(tNode);
+          edges.push(makeEdge(stageId, tNode.id));
+          jobY += ROW_H;
+          continue;
+        }
         const jobId = nextId('job');
         const isDeployment = 'deployment' in job;
         const jobKey = isDeployment
@@ -183,6 +217,24 @@ export function pipelineToGraph(yaml: string): {
         let prevTaskId: string = jobId;
 
         for (const step of steps) {
+          // ── Step-level template reference ─────────────────────────────────
+          if ((step as unknown as { template?: unknown }).template !== undefined) {
+            const stepRaw = step as unknown as { template: string; parameters?: Record<string, unknown> };
+            const tId = nextId('template');
+            const tNode = makeNode(tId, 'template', stepRaw.template, stepRaw.template, tId, { x: TASK_X, y: taskY });
+            tNode.data.displayName = stepRaw.template;
+            tNode.data.parentId = jobId;
+            tNode.data.details = {
+              templatePath: stepRaw.template,
+              parametersRaw: stepRaw.parameters ? jsYaml.dump(stepRaw.parameters, { lineWidth: 120 }).trim() : undefined,
+              templateLevel: 'step',
+            };
+            nodes.push(tNode);
+            edges.push(makeEdge(prevTaskId, tNode.id));
+            prevTaskId = tNode.id;
+            taskY += ROW_H;
+            continue;
+          }
           const taskId = nextId('task');
           const { kind, label, displayName } = describeStep(step);
 
@@ -211,6 +263,23 @@ export function pipelineToGraph(yaml: string): {
     let jobY = 0;
 
     for (const job of pipeline.jobs) {
+      // ── Job-level template reference ───────────────────────────────────────
+      if ((job as unknown as { template?: unknown }).template !== undefined) {
+        const jobRaw = job as unknown as { template: string; parameters?: Record<string, unknown> };
+        const tId = nextId('template');
+        const tNode = makeNode(tId, 'template', jobRaw.template, jobRaw.template, tId, { x: JOB_X, y: jobY });
+        tNode.data.displayName = jobRaw.template;
+        tNode.data.parentId = triggerId;
+        tNode.data.details = {
+          templatePath: jobRaw.template,
+          parametersRaw: jobRaw.parameters ? jsYaml.dump(jobRaw.parameters, { lineWidth: 120 }).trim() : undefined,
+          templateLevel: 'job',
+        };
+        nodes.push(tNode);
+        edges.push(makeEdge(triggerId, tNode.id));
+        jobY += ROW_H;
+        continue;
+      }
       const jobId = nextId('job');
       const isDeployment = 'deployment' in job;
       const jobKey = isDeployment
@@ -253,6 +322,24 @@ export function pipelineToGraph(yaml: string): {
       let taskY = jobY;
       let prevTaskId: string = jobId;
       for (const step of steps) {
+        // ── Step-level template reference ─────────────────────────────────
+        if ((step as unknown as { template?: unknown }).template !== undefined) {
+          const stepRaw = step as unknown as { template: string; parameters?: Record<string, unknown> };
+          const tId = nextId('template');
+          const tNode = makeNode(tId, 'template', stepRaw.template, stepRaw.template, tId, { x: TASK_X, y: taskY });
+          tNode.data.displayName = stepRaw.template;
+          tNode.data.parentId = jobId;
+          tNode.data.details = {
+            templatePath: stepRaw.template,
+            parametersRaw: stepRaw.parameters ? jsYaml.dump(stepRaw.parameters, { lineWidth: 120 }).trim() : undefined,
+            templateLevel: 'step',
+          };
+          nodes.push(tNode);
+          edges.push(makeEdge(prevTaskId, tNode.id));
+          prevTaskId = tNode.id;
+          taskY += ROW_H;
+          continue;
+        }
         const taskId = nextId('task');
         const { kind, label, displayName } = describeStep(step);
         const taskNode = makeNode(taskId, kind, label, label, taskId, {
@@ -277,6 +364,24 @@ export function pipelineToGraph(yaml: string): {
     let taskY = 0;
     let prevTaskId: string = triggerId;
     for (const step of pipeline.steps) {
+      // ── Step-level template reference ─────────────────────────────────────
+      if ((step as unknown as { template?: unknown }).template !== undefined) {
+        const stepRaw = step as unknown as { template: string; parameters?: Record<string, unknown> };
+        const tId = nextId('template');
+        const tNode = makeNode(tId, 'template', stepRaw.template, stepRaw.template, tId, { x: TASK_X, y: taskY });
+        tNode.data.displayName = stepRaw.template;
+        tNode.data.parentId = triggerId;
+        tNode.data.details = {
+          templatePath: stepRaw.template,
+          parametersRaw: stepRaw.parameters ? jsYaml.dump(stepRaw.parameters, { lineWidth: 120 }).trim() : undefined,
+          templateLevel: 'step',
+        };
+        nodes.push(tNode);
+        edges.push(makeEdge(prevTaskId, tNode.id));
+        prevTaskId = tNode.id;
+        taskY += ROW_H;
+        continue;
+      }
       const taskId = nextId('task');
       const { kind, label, displayName } = describeStep(step);
       const taskNode = makeNode(taskId, kind, label, label, taskId, {
@@ -526,10 +631,19 @@ export function graphToPipeline(
   const stageNodes = nodes.filter((n) => n.data.kind === 'stage');
   const jobNodes = nodes.filter((n) => n.data.kind === 'job');
   const taskNodes = nodes.filter((n) =>
-    ['task', 'script', 'bash', 'powershell', 'checkout', 'publish', 'download'].includes(
-      n.data.kind
-    )
+    ['task', 'script', 'bash', 'powershell', 'checkout', 'publish', 'download'].includes(n.data.kind) ||
+    (n.data.kind === 'template' && n.data.details?.['templateLevel'] === 'step')
   );
+  // Template nodes grouped by pipeline level
+  const stageLevelTemplateNodes = nodes.filter(
+    (n) => n.data.kind === 'template' && n.data.details?.['templateLevel'] === 'stage'
+  );
+  const jobLevelTemplateNodes = nodes.filter(
+    (n) => n.data.kind === 'template' && n.data.details?.['templateLevel'] === 'job'
+  );
+  const jobLevelTemplateNodeIdSet = new Set(jobLevelTemplateNodes.map((n) => n.id));
+  const allStageLevelNodes = [...stageNodes, ...stageLevelTemplateNodes]
+    .sort((a, b) => a.position.y - b.position.y);
 
   // Build edge map: parentId → childIds
   const childMap = new Map<string, string[]>();
@@ -545,23 +659,32 @@ export function graphToPipeline(
   const triggerYaml = buildTriggerYaml(triggerType, triggerNode?.data.details);
 
   // ── Stages ────────────────────────────────────────────────────────────────
-  if (stageNodes.length > 0) {
-    const stages = stageNodes.map((sn) => {
-      // Collect all jobs belonging to this stage by BFS through stage→job
-      // and job→job edges (jobs that depend on another job are connected
-      // job→job rather than stage→job).
+  if (allStageLevelNodes.length > 0) {
+    const stages = allStageLevelNodes.map((sn) => {
+      // Stage-level template: emit { template, parameters } directly
+      if (sn.data.kind === 'template') {
+        return buildTemplateObject(sn);
+      }
+
+      // Collect all jobs belonging to this stage by BFS through stage->job
+      // and job->job edges (jobs that depend on another job are connected
+      // job->job rather than stage->job).
       const jobNodeIdSet = new Set(jobNodes.map((j) => j.id));
       const stageJobNodes: Node<GraphNodeData>[] = [];
       const visitedJobs = new Set<string>();
-      const jobQueue = (childMap.get(sn.id) ?? [])
-        .filter((id) => jobNodeIdSet.has(id))
-        .map((id) => jobNodes.find((j) => j.id === id))
+      const jobQueue: Node<GraphNodeData>[] = (childMap.get(sn.id) ?? [])
+        .map((id) => {
+          if (jobNodeIdSet.has(id)) { return jobNodes.find((j) => j.id === id); }
+          if (jobLevelTemplateNodeIdSet.has(id)) { return jobLevelTemplateNodes.find((j) => j.id === id); }
+          return undefined;
+        })
         .filter((j): j is Node<GraphNodeData> => !!j);
       while (jobQueue.length > 0) {
         const jn = jobQueue.shift()!;
         if (visitedJobs.has(jn.id)) { continue; }
         visitedJobs.add(jn.id);
         stageJobNodes.push(jn);
+        // Only real jobs participate in job->job dependsOn chains
         const depJobChildren = (childMap.get(jn.id) ?? [])
           .filter((id) => jobNodeIdSet.has(id))
           .map((id) => jobNodes.find((j) => j.id === id))
@@ -569,7 +692,11 @@ export function graphToPipeline(
         jobQueue.push(...depJobChildren);
       }
 
-      const jobs = stageJobNodes.map((jn) => buildJobObject(jn, childMap, taskNodes, nodes, _edges));
+      const jobs = stageJobNodes.map((jn) =>
+        jn.data.kind === 'template'
+          ? buildTemplateObject(jn)
+          : buildJobObject(jn, childMap, taskNodes, nodes, _edges)
+      );
 
       const stageObj: Record<string, unknown> = {
         stage: sn.data.rawId,
@@ -615,8 +742,14 @@ export function graphToPipeline(
   }
 
   // ── Jobs only ─────────────────────────────────────────────────────────────
-  if (jobNodes.length > 0) {
-    const jobs = jobNodes.map((jn) => buildJobObject(jn, childMap, taskNodes, nodes, _edges));
+  const allJobLevelNodes = [...jobNodes, ...jobLevelTemplateNodes]
+    .sort((a, b) => a.position.y - b.position.y);
+  if (allJobLevelNodes.length > 0) {
+    const jobs = allJobLevelNodes.map((jn) =>
+      jn.data.kind === 'template'
+        ? buildTemplateObject(jn)
+        : buildJobObject(jn, childMap, taskNodes, nodes, _edges)
+    );
     return jsYaml.dump({ ...triggerYaml, jobs }, { lineWidth: 120, noRefs: true });
   }
 
@@ -942,6 +1075,24 @@ function buildTaskDetails(step: PipelineStep): Record<string, unknown> {
   return { stepKind: 'task', taskName: '' };
 }
 
+/** Serialises a template reference node to its YAML form: { template, parameters? } */
+function buildTemplateObject(tn: Node<GraphNodeData>): Record<string, unknown> {
+  const d = tn.data.details ?? {};
+  const obj: Record<string, unknown> = {
+    template: (d['templatePath'] as string | undefined) ?? '',
+  };
+  const parametersRaw = d['parametersRaw'] as string | undefined;
+  if (parametersRaw) {
+    try {
+      const params = jsYaml.load(parametersRaw);
+      if (params !== null && typeof params === 'object' && !Array.isArray(params)) {
+        obj['parameters'] = params;
+      }
+    } catch { /* skip malformed */ }
+  }
+  return obj;
+}
+
 function buildJobObject(
   jn: Node<GraphNodeData>,
   childMap: Map<string, string[]>,
@@ -1025,6 +1176,9 @@ function buildJobObject(
 }
 
 function buildStepObject(tn: Node<GraphNodeData>): Record<string, unknown> {
+  if (tn.data.kind === 'template') {
+    return buildTemplateObject(tn);
+  }
   const d = tn.data.details ?? {};
   const taskName = d['taskName'] as string | undefined;
   const stepKind = d['stepKind'] as string | undefined;

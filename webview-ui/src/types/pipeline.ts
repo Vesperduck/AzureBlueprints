@@ -188,7 +188,8 @@ export type GraphNodeKind =
   | 'script'
   | 'checkout'
   | 'publish'
-  | 'download';
+  | 'download'
+  | 'template';
 
 export interface GraphNodeData {
   kind: GraphNodeKind;
