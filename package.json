@@ -2,7 +2,7 @@
   "name": "azure-blueprints",
   "displayName": "Azure Blueprints: Pipeline Graph Editor",
   "description": "Edit Azure DevOps YAML pipelines as a visual graph with live YAML synchronization.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "VesperWilde",
   "license": "MIT",
   "homepage": "https://vesperwilde.net/extensions/azure-blueprints",
@@ -36,6 +36,7 @@
   ],
   "activationEvents": [
     "onLanguage:yaml",
+    "onLanguage:azure-pipelines",
     "onCommand:azureBlueprints.openGraphEditor"
   ],
   "main": "./out/extension.js",
@@ -86,13 +87,13 @@
         {
           "command": "azureBlueprints.openGraphEditor",
           "group": "navigation",
-          "when": "resourceLangId == yaml"
+          "when": "resourceLangId == yaml || resourceLangId == azure-pipelines"
         }
       ],
       "explorer/context": [
         {
           "command": "azureBlueprints.openGraphEditor",
-          "when": "resourceLangId == yaml",
+          "when": "resourceLangId == yaml || resourceLangId == azure-pipelines",
           "group": "navigation"
         }
       ]

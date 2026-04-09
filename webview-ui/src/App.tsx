@@ -13,6 +13,14 @@ import './App.css';
 
 const vscode = getVsCodeApi();
 
+/** One level of the in-webview navigation stack. */
+interface NavEntry {
+  fileName: string;
+  absolutePath: string;
+  nodes: Node<GraphNodeData>[];
+  edges: Edge[];
+}
+
 export default function App() {
   const [nodes, setNodes] = useState<Node<GraphNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -20,6 +28,20 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [documentPath, setDocumentPath] = useState<string>('');
+
+  // ── Template navigation stack ──────────────────────────────────────────────
+  // Each entry captures the view that was pushed aside when navigating into a
+  // template. navStack[0] = root document, navStack[n-1] = direct parent.
+  const [navStack, setNavStack] = useState<NavEntry[]>([]);
+  const navStackRef = useRef<NavEntry[]>([]);
+
+  // The absolute path of the document currently being viewed and edited
+  // (the original pipeline path at root, or the template's path when navigated).
+  const activeDocPathRef = useRef<string>('');
+
+  // Ref mirror of fileName so the stale message-handler closure can read it.
+  const fileNameRef = useRef<string>('');
+  useEffect(() => { fileNameRef.current = fileName; }, [fileName]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -79,15 +101,14 @@ export default function App() {
   // Per-templatePath cache (keyed by templatePath string)
   const templateParamsCacheRef = useRef<Map<string, TemplateParamDefinition[]>>(new Map());
 
-  // Ref mirror of documentPath for use inside stale closures
-  const documentPathRef = useRef<string>('');
-  useEffect(() => { documentPathRef.current = documentPath; }, [documentPath]);
-
   // ── Listen for messages from the extension host ───────────────────────────
   useEffect(() => {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
       const message = event.data;
       if (message.type === 'update') {
+        // While navigated into a template, suppress incoming updates about the
+        // primary document so the graph doesn't revert to the root pipeline.
+        if (navStackRef.current.length > 0) { return; }
         // Ignore echo-backs of our own edits regardless of order/timing
         if (pendingEditCount.current > 0) {
           pendingEditCount.current -= 1;
@@ -96,6 +117,7 @@ export default function App() {
         // Genuine external update (user edited the YAML file directly)
         setFileName(message.fileName);
         setDocumentPath(message.documentPath);
+        activeDocPathRef.current = message.documentPath;
         try {
           const { nodes: n, edges: e } = pipelineToGraph(message.yaml);
           setNodes(n);
@@ -139,6 +161,36 @@ export default function App() {
         if (selPath === templatePath) {
           setTemplateParamSchema(params);
           setTemplateParamsLoading(false);
+        }
+      } else if (message.type === 'templateLoaded') {
+        // Push current view onto the nav stack and switch to the template graph.
+        const entry: NavEntry = {
+          fileName: fileNameRef.current,
+          absolutePath: activeDocPathRef.current,
+          nodes: nodesRef.current,
+          edges: edgesRef.current,
+        };
+        const newStack = [...navStackRef.current, entry];
+        navStackRef.current = newStack;
+        setNavStack(newStack);
+
+        activeDocPathRef.current = message.absolutePath;
+        setFileName(message.fileName);
+        setSelectedNodeId(null);
+        setTaskInputSchema(null);
+        setTemplateParamSchema(null);
+        templateParamsCacheRef.current.clear();
+        taskInputsCacheRef.current.clear();
+        try {
+          const { nodes: n, edges: e } = pipelineToGraph(message.yaml);
+          setNodes(n);
+          setEdges(e);
+          setParseError(null);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setParseError(msg);
+          setNodes([]);
+          setEdges([]);
         }
       }
     };
@@ -194,7 +246,7 @@ export default function App() {
     } else {
       setTemplateParamSchema(null);
       setTemplateParamsLoading(true);
-      vscode.postMessage({ type: 'requestTemplateParams', templatePath, documentPath: documentPathRef.current });
+      vscode.postMessage({ type: 'requestTemplateParams', templatePath, documentPath: activeDocPathRef.current });
     }
   }, [selectedNodeId]);
 
@@ -203,8 +255,15 @@ export default function App() {
     (updatedNodes: Node<GraphNodeData>[], updatedEdges: Edge[]) => {
       try {
         const yaml = graphToPipeline(updatedNodes, updatedEdges);
-        pendingEditCount.current += 1;
-        vscode.postMessage({ type: 'edit', yaml });
+        if (navStackRef.current.length > 0) {
+          // Editing a navigated template file — send with explicit filePath so
+          // the extension writes to the right file. Don't increment
+          // pendingEditCount: the extension won't echo this back via 'update'.
+          vscode.postMessage({ type: 'edit', yaml, filePath: activeDocPathRef.current });
+        } else {
+          pendingEditCount.current += 1;
+          vscode.postMessage({ type: 'edit', yaml });
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         vscode.postMessage({ type: 'showError', text: `Failed to serialize graph: ${msg}` });
@@ -270,6 +329,37 @@ export default function App() {
       jobDragSourceRef.current = sourceNodeId;
       setContextMenu({ x: clientX, y: clientY, loading: true, tasks: [] });
       vscode.postMessage({ type: 'requestTaskCatalog' });
+    },
+    []
+  );
+
+  // Called when the user double-clicks a template node — navigate into it.
+  const handleTemplateNodeDoubleClick = useCallback(
+    (templatePath: string) => {
+      vscode.postMessage({ type: 'loadTemplate', templatePath, documentPath: activeDocPathRef.current });
+    },
+    []
+  );
+
+  // Navigate back to a specific breadcrumb level.
+  // `index` is the position in navStack whose state we want to restore.
+  const handleNavigateTo = useCallback(
+    (index: number) => {
+      const entry = navStackRef.current[index];
+      if (!entry) { return; }
+      const newStack = navStackRef.current.slice(0, index);
+      navStackRef.current = newStack;
+      setNavStack(newStack);
+      activeDocPathRef.current = entry.absolutePath;
+      setFileName(entry.fileName);
+      setNodes(entry.nodes);
+      setEdges(entry.edges);
+      setSelectedNodeId(null);
+      setTaskInputSchema(null);
+      setTemplateParamSchema(null);
+      setParseError(null);
+      templateParamsCacheRef.current.clear();
+      taskInputsCacheRef.current.clear();
     },
     []
   );
@@ -368,7 +458,30 @@ export default function App() {
         <span className="app-title">
           <span className="app-icon">⬡</span> Azure Blueprints
         </span>
-        {fileName && <span className="app-filename">{fileName}</span>}
+
+        {/* Breadcrumb trail — shown when navigated into template(s) */}
+        {navStack.length > 0 ? (
+          <nav className="app-breadcrumb" aria-label="Navigation">
+            {navStack.map((entry, i) => (
+              <React.Fragment key={i}>
+                <button
+                  className="app-breadcrumb-item app-breadcrumb-link"
+                  onClick={() => handleNavigateTo(i)}
+                  title={entry.absolutePath}
+                >
+                  {entry.fileName || 'pipeline'}
+                </button>
+                <span className="app-breadcrumb-sep" aria-hidden="true">›</span>
+              </React.Fragment>
+            ))}
+            <span className="app-breadcrumb-item app-breadcrumb-current" title={activeDocPathRef.current}>
+              {fileName}
+            </span>
+          </nav>
+        ) : (
+          fileName && <span className="app-filename">{fileName}</span>
+        )}
+
         {parseError && (
           <span className="app-error" title={parseError}>
             ⚠ Parse error
@@ -388,6 +501,7 @@ export default function App() {
           onPaneContextMenu={handleContextMenu}
           onTaskConnectEnd={handleTaskConnectEnd}
           onEdgeDropEnd={handleEdgeDropEnd}
+          onTemplateNodeDoubleClick={handleTemplateNodeDoubleClick}
         />
         </ReactFlowProvider>
 

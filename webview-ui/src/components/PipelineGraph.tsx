@@ -123,6 +123,9 @@ interface PipelineGraphProps {
    *  `sourceKind` is `'stage'` or `'job'`; `flowX`/`flowY` are canvas-space
    *  coordinates for placing the new node. */
   onEdgeDropEnd?: (sourceNodeId: string, sourceKind: 'stage' | 'job', clientX: number, clientY: number, flowX: number, flowY: number) => void;
+  /** Called when a template node is double-clicked. `templatePath` is the
+   *  relative path stored in `details.templatePath`. */
+  onTemplateNodeDoubleClick?: (templatePath: string) => void;
 }
 
 export default function PipelineGraph({
@@ -135,6 +138,7 @@ export default function PipelineGraph({
   onPaneContextMenu,
   onTaskConnectEnd,
   onEdgeDropEnd,
+  onTemplateNodeDoubleClick,
 }: PipelineGraphProps) {
   // Refs kept synchronously up-to-date within the same JS tick.
   const currentNodes = useRef<Node<GraphNodeData>[]>(nodes);
@@ -346,6 +350,17 @@ export default function PipelineGraph({
     [onNodeSelect]
   );
 
+  const handleNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: Node<GraphNodeData>) => {
+      if (node.data.kind !== 'template') { return; }
+      const templatePath = (node.data.details?.['templatePath'] as string | undefined) ?? '';
+      if (templatePath) {
+        onTemplateNodeDoubleClick?.(templatePath);
+      }
+    },
+    [onTemplateNodeDoubleClick]
+  );
+
   const handlePaneClick = useCallback(() => {
     onNodeSelect(null);
   }, [onNodeSelect]);
@@ -412,6 +427,7 @@ export default function PipelineGraph({
         onEdgeUpdate={handleEdgeUpdate}
         onEdgeUpdateEnd={handleEdgeUpdateEnd}
         onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
         fitView

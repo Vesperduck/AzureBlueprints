@@ -70,10 +70,14 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
             break;
 
           case 'edit': {
+            const targetUri = message.filePath ? vscode.Uri.file(message.filePath) : document.uri;
+            const targetDoc = message.filePath
+              ? await vscode.workspace.openTextDocument(targetUri)
+              : document;
             const edit = new vscode.WorkspaceEdit();
             edit.replace(
-              document.uri,
-              new vscode.Range(0, 0, document.lineCount, 0),
+              targetUri,
+              new vscode.Range(0, 0, targetDoc.lineCount, 0),
               message.yaml
             );
             await vscode.workspace.applyEdit(edit);
@@ -175,6 +179,31 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
             }
             break;
           }
+
+          case 'loadTemplate': {
+            // Read a template file's content and send it back so the webview
+            // can navigate into it in-place (same-window breadcrumb navigation).
+            try {
+              const docDir = path.dirname(message.documentPath);
+              const templateAbs = path.resolve(docDir, message.templatePath);
+              const fileUri = vscode.Uri.file(templateAbs);
+              const bytes = await vscode.workspace.fs.readFile(fileUri);
+              const yaml = Buffer.from(bytes).toString('utf8');
+              const fileName = path.basename(templateAbs);
+              webviewPanel.webview.postMessage({
+                type: 'templateLoaded',
+                yaml,
+                fileName,
+                absolutePath: templateAbs,
+              });
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              vscode.window.showErrorMessage(
+                `Pipeline Graph: Cannot open template \u2013 ${msg}`
+              );
+            }
+            break;
+          }
         }
       }
     );
@@ -231,12 +260,13 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
 
 type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'edit'; yaml: string }
+  | { type: 'edit'; yaml: string; filePath?: string }
   | { type: 'showError'; text: string }
   | { type: 'showInfo'; text: string }
   | { type: 'requestTaskCatalog' }
   | { type: 'requestTaskInputs'; taskRef: string }
-  | { type: 'requestTemplateParams'; templatePath: string; documentPath: string };
+  | { type: 'requestTemplateParams'; templatePath: string; documentPath: string }
+  | { type: 'loadTemplate'; templatePath: string; documentPath: string };
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

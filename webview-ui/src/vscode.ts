@@ -14,12 +14,13 @@ export interface VsCodeApi {
 
 export type WebviewToExtensionMessage =
   | { type: 'ready' }
-  | { type: 'edit'; yaml: string }
+  | { type: 'edit'; yaml: string; filePath?: string }
   | { type: 'showError'; text: string }
   | { type: 'showInfo'; text: string }
   | { type: 'requestTaskCatalog' }
   | { type: 'requestTaskInputs'; taskRef: string }
-  | { type: 'requestTemplateParams'; templatePath: string; documentPath: string };
+  | { type: 'requestTemplateParams'; templatePath: string; documentPath: string }
+  | { type: 'loadTemplate'; templatePath: string; documentPath: string };
 
 // ── Message shapes (extension → webview) ─────────────────────────────────────
 
@@ -52,7 +53,14 @@ export interface TemplateParamsReadyMessage {
   params: TemplateParamDefinition[];
 }
 
-export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage | TaskInputsReadyMessage | TemplateParamsReadyMessage;
+export interface TemplateLoadedMessage {
+  type: 'templateLoaded';
+  yaml: string;
+  fileName: string;
+  absolutePath: string;
+}
+
+export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage | TaskInputsReadyMessage | TemplateParamsReadyMessage | TemplateLoadedMessage;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
