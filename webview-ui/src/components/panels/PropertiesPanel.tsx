@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import * as jsYaml from 'js-yaml';
 import type { Node } from 'reactflow';
-import type { GraphNodeData, TaskInputDefinition } from '../../types/pipeline';
+import type { GraphNodeData, TaskInputDefinition, TemplateParamDefinition } from '../../types/pipeline';
 import CronPicker from './CronPicker';
 import './PropertiesPanel.css';
 
@@ -107,6 +107,10 @@ interface PropertiesPanelProps {
   taskInputSchema?: TaskInputDefinition[] | null;
   /** True while the schema is being fetched from the extension host. */
   taskInputsLoading?: boolean;
+  /** Parameter schema for the selected template node (null = loading / unavailable). */
+  templateParamSchema?: TemplateParamDefinition[] | null;
+  /** True while the template parameter schema is being fetched. */
+  templateParamsLoading?: boolean;
 }
 
 export default function PropertiesPanel({
@@ -115,6 +119,8 @@ export default function PropertiesPanel({
   onClose,
   taskInputSchema,
   taskInputsLoading,
+  templateParamSchema,
+  templateParamsLoading,
 }: PropertiesPanelProps) {
   const { data } = node;
 
@@ -416,18 +422,104 @@ export default function PropertiesPanel({
               placeholder="templates/my-template.yml"
               onChange={(v) => setDetail('templatePath', v !== '' ? v : '')}
             />
-            <SectionDivider label="Parameters (YAML)" />
-            <div className="props-row props-row--col">
-              <textarea
-                id="pp-template-parameters"
-                className="props-input props-textarea"
-                value={(data.details?.['parametersRaw'] as string | undefined) ?? ''}
-                placeholder={'environment: production\nbuildConfig: Release'}
-                onChange={(e) => setDetail('parametersRaw', e.target.value !== '' ? e.target.value : undefined)}
-                rows={4}
-                spellCheck={false}
-              />
-            </div>
+            <SectionDivider label="Parameters" />
+            {templateParamsLoading ? (
+              <div className="props-schema-loading">Loading template parameters…</div>
+            ) : templateParamSchema && templateParamSchema.length > 0 ? (
+              (() => {
+                const rawYaml = (data.details?.['parametersRaw'] as string | undefined) ?? '';
+                let parsedParams: Record<string, unknown> = {};
+                try { parsedParams = (jsYaml.load(rawYaml) as Record<string, unknown>) ?? {}; } catch { /* ignore */ }
+                return (
+                  <>
+                    {templateParamSchema.map((param) => {
+                      const fieldId = `pp-tparam-${param.name}`;
+                      const rawVal = parsedParams[param.name];
+                      const defaultStr = param.default !== undefined ? String(param.default) : '';
+
+                      const updateParam = (val: unknown) => {
+                        const updated = { ...parsedParams, [param.name]: val };
+                        // Remove keys with undefined/null so the YAML stays clean
+                        Object.keys(updated).forEach((k) => { if (updated[k] == null) { delete updated[k]; } });
+                        const newRaw = Object.keys(updated).length > 0 ? jsYaml.dump(updated).trimEnd() : '';
+                        setDetail('parametersRaw', newRaw !== '' ? newRaw : undefined);
+                      };
+
+                      const label = param.displayName ?? param.name;
+
+                      if (param.values && param.values.length > 0) {
+                        const strVal = rawVal !== undefined ? String(rawVal) : defaultStr;
+                        return (
+                          <div key={param.name} className="props-row props-row--col">
+                            <label className="props-label" htmlFor={fieldId}>{label}</label>
+                            <select
+                              id={fieldId}
+                              className="props-input"
+                              value={strVal}
+                              onChange={(e) => updateParam(e.target.value)}
+                            >
+                              {!param.values!.includes(strVal) && (
+                                <option value="">{defaultStr || '— select —'}</option>
+                              )}
+                              {param.values!.map((v) => (
+                                <option key={v} value={v}>{v}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      } else if (param.type === 'boolean') {
+                        const boolVal = rawVal !== undefined ? Boolean(rawVal) : (param.default === true || param.default === 'true');
+                        return (
+                          <CheckboxField
+                            key={param.name}
+                            id={fieldId}
+                            label={label}
+                            checked={boolVal}
+                            onChange={(v) => updateParam(v)}
+                          />
+                        );
+                      } else if (param.type === 'number') {
+                        const numVal = rawVal !== undefined ? Number(rawVal) : (param.default !== undefined ? Number(param.default) : undefined);
+                        return (
+                          <NumberField
+                            key={param.name}
+                            id={fieldId}
+                            label={label}
+                            value={isNaN(numVal as number) ? undefined : (numVal as number)}
+                            placeholder={defaultStr}
+                            onChange={(v) => updateParam(v ?? null)}
+                          />
+                        );
+                      } else {
+                        const strVal = rawVal !== undefined ? String(rawVal) : '';
+                        return (
+                          <TextField
+                            key={param.name}
+                            id={fieldId}
+                            label={label}
+                            value={strVal}
+                            placeholder={defaultStr}
+                            onChange={(v) => updateParam(v !== '' ? v : null)}
+                          />
+                        );
+                      }
+                    })}
+                  </>
+                );
+              })()
+            ) : (
+              <div className="props-row props-row--col">
+                <textarea
+                  id="pp-template-parameters"
+                  className="props-input props-textarea"
+                  value={(data.details?.['parametersRaw'] as string | undefined) ?? ''}
+                  placeholder={'environment: production\nbuildConfig: Release'}
+                  onChange={(e) => setDetail('parametersRaw', e.target.value !== '' ? e.target.value : undefined)}
+                  rows={4}
+                  spellCheck={false}
+                />
+              </div>
+            )}
           </>
         )}
 

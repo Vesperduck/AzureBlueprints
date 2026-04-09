@@ -1,4 +1,4 @@
-import type { CatalogTask, TaskInputDefinition } from './types/pipeline';
+import type { CatalogTask, TaskInputDefinition, TemplateParamDefinition } from './types/pipeline';
 
 // VS Code webview API wrapper – acquires the VS Code API once and re-exports
 // typed helpers so consuming components don't need to call acquireVsCodeApi()
@@ -18,7 +18,8 @@ export type WebviewToExtensionMessage =
   | { type: 'showError'; text: string }
   | { type: 'showInfo'; text: string }
   | { type: 'requestTaskCatalog' }
-  | { type: 'requestTaskInputs'; taskRef: string };
+  | { type: 'requestTaskInputs'; taskRef: string }
+  | { type: 'requestTemplateParams'; templatePath: string; documentPath: string };
 
 // ── Message shapes (extension → webview) ─────────────────────────────────────
 
@@ -26,6 +27,7 @@ export interface UpdateMessage {
   type: 'update';
   yaml: string;
   fileName: string;
+  documentPath: string;
 }
 
 export interface AddTaskMessage {
@@ -44,7 +46,13 @@ export interface TaskInputsReadyMessage {
   inputs: TaskInputDefinition[];
 }
 
-export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage | TaskInputsReadyMessage;
+export interface TemplateParamsReadyMessage {
+  type: 'templateParamsReady';
+  templatePath: string;
+  params: TemplateParamDefinition[];
+}
+
+export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage | TaskInputsReadyMessage | TemplateParamsReadyMessage;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

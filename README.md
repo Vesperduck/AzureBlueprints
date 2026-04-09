@@ -140,6 +140,7 @@ npm run test:coverage
 
 - 2026-04-07: Added task input schema — selecting a `task:` node now fetches structured input definitions from the Azure DevOps task catalog and renders them as typed form fields (text, checkbox, select, textarea) grouped by category in the Properties panel; 5 new tests for `parseInputsRaw` (221 total).
 - 2026-04-07: Added template node support — stage, job, and step template references (`- template: path.yml`) are now parsed, displayed as distinct purple nodes, and round-trip through the YAML converter with full `parameters:` block support; 13 new tests (254 total).
+- 2026-04-07: Added live template parameter resolution — when a template node's path resolves to a local file the extension reads and parses its `parameters:` block and returns `TemplateParamDefinition[]` to the webview; the Properties panel renders each parameter as a typed field (text, number, boolean checkbox, or values-based select); unresolvable templates fall back silently to the raw YAML textarea.
 
 ## Changelog
 

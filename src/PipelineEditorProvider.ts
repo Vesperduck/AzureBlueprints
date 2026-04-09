@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as jsYaml from 'js-yaml';
 import { fetchTaskCatalog, findTaskInputs } from './taskCatalog';
+import type { TemplateParamDefinition } from './types/pipeline';
 
 /**
  * Provides the Pipeline Graph Editor as a VS Code custom text editor.
@@ -48,6 +50,7 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
         type: 'update',
         yaml: document.getText(),
         fileName: path.basename(document.uri.fsPath),
+        documentPath: document.uri.fsPath,
       });
     };
 
@@ -132,6 +135,46 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
             }
             break;
           }
+
+          case 'requestTemplateParams': {
+            // Resolve the template path relative to the open document, read
+            // the file, parse its top-level `parameters:` block, and send the
+            // structured definitions back to the webview.
+            try {
+              const docDir = path.dirname(message.documentPath);
+              const templateAbs = path.resolve(docDir, message.templatePath);
+              const fileUri = vscode.Uri.file(templateAbs);
+              const bytes = await vscode.workspace.fs.readFile(fileUri);
+              const content = Buffer.from(bytes).toString('utf8');
+              const parsed = jsYaml.load(content) as Record<string, unknown> | null | undefined;
+              const rawParams = parsed && typeof parsed === 'object' && Array.isArray(parsed['parameters'])
+                ? (parsed['parameters'] as unknown[])
+                : [];
+              const params: TemplateParamDefinition[] = rawParams
+                .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+                .map((p) => ({
+                  name: String(p['name'] ?? ''),
+                  type: String(p['type'] ?? 'string'),
+                  displayName: p['displayName'] !== undefined ? String(p['displayName']) : undefined,
+                  default: p['default'],
+                  values: Array.isArray(p['values']) ? (p['values'] as unknown[]).map(String) : undefined,
+                }))
+                .filter((p) => p.name !== '');
+              webviewPanel.webview.postMessage({
+                type: 'templateParamsReady',
+                templatePath: message.templatePath,
+                params,
+              });
+            } catch (err: unknown) {
+              // File not found or unreadable: send empty params (not an error the user needs to see)
+              webviewPanel.webview.postMessage({
+                type: 'templateParamsReady',
+                templatePath: message.templatePath,
+                params: [],
+              });
+            }
+            break;
+          }
         }
       }
     );
@@ -192,7 +235,8 @@ type WebviewMessage =
   | { type: 'showError'; text: string }
   | { type: 'showInfo'; text: string }
   | { type: 'requestTaskCatalog' }
-  | { type: 'requestTaskInputs'; taskRef: string };
+  | { type: 'requestTaskInputs'; taskRef: string }
+  | { type: 'requestTemplateParams'; templatePath: string; documentPath: string };
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

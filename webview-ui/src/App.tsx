@@ -8,7 +8,7 @@ import ContextEdgeMenu, { type EdgeDropChoice } from './components/ContextEdgeMe
 import ContextTriggerMenu from './components/ContextTriggerMenu';
 import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, type TriggerType } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
-import type { GraphNodeData, CatalogTask, TaskInputDefinition } from './types/pipeline';
+import type { GraphNodeData, CatalogTask, TaskInputDefinition, TemplateParamDefinition } from './types/pipeline';
 import './App.css';
 
 const vscode = getVsCodeApi();
@@ -19,6 +19,7 @@ export default function App() {
   // Track selected node by ID so the panel always reads fresh data from `nodes`
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
+  const [documentPath, setDocumentPath] = useState<string>('');
   const [parseError, setParseError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -72,6 +73,16 @@ export default function App() {
   // Per-taskRef cache so we don't re-fetch the same schema twice
   const taskInputsCacheRef = useRef<Map<string, TaskInputDefinition[]>>(new Map());
 
+  // ── Template parameter schema (fetched when a template node is selected) ──
+  const [templateParamSchema, setTemplateParamSchema] = useState<TemplateParamDefinition[] | null>(null);
+  const [templateParamsLoading, setTemplateParamsLoading] = useState(false);
+  // Per-templatePath cache (keyed by templatePath string)
+  const templateParamsCacheRef = useRef<Map<string, TemplateParamDefinition[]>>(new Map());
+
+  // Ref mirror of documentPath for use inside stale closures
+  const documentPathRef = useRef<string>('');
+  useEffect(() => { documentPathRef.current = documentPath; }, [documentPath]);
+
   // ── Listen for messages from the extension host ───────────────────────────
   useEffect(() => {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
@@ -84,6 +95,7 @@ export default function App() {
         }
         // Genuine external update (user edited the YAML file directly)
         setFileName(message.fileName);
+        setDocumentPath(message.documentPath);
         try {
           const { nodes: n, edges: e } = pipelineToGraph(message.yaml);
           setNodes(n);
@@ -119,6 +131,15 @@ export default function App() {
           setTaskInputSchema(inputs);
           setTaskInputsLoading(false);
         }
+      } else if (message.type === 'templateParamsReady') {
+        const { templatePath, params } = message;
+        templateParamsCacheRef.current.set(templatePath, params);
+        const selNode = nodesRef.current.find((n) => n.id === selectedNodeIdRef.current);
+        const selPath = selNode?.data.details?.['templatePath'] as string | undefined;
+        if (selPath === templatePath) {
+          setTemplateParamSchema(params);
+          setTemplateParamsLoading(false);
+        }
       }
     };
     window.addEventListener('message', handler);
@@ -151,6 +172,31 @@ export default function App() {
       vscode.postMessage({ type: 'requestTaskInputs', taskRef });
     }
   }, [selectedNodeId]);  // Intentionally excludes `nodes`: we only re-fetch on node selection change
+
+  // ── Fetch template parameter schema when a template node is selected ──────
+  useEffect(() => {
+    const node = nodesRef.current.find((n) => n.id === selectedNodeId);
+    if (node?.data.kind !== 'template') {
+      setTemplateParamSchema(null);
+      setTemplateParamsLoading(false);
+      return;
+    }
+    const templatePath = (node.data.details?.['templatePath'] as string | undefined) ?? '';
+    if (!templatePath) {
+      setTemplateParamSchema(null);
+      setTemplateParamsLoading(false);
+      return;
+    }
+    const cached = templateParamsCacheRef.current.get(templatePath);
+    if (cached) {
+      setTemplateParamSchema(cached);
+      setTemplateParamsLoading(false);
+    } else {
+      setTemplateParamSchema(null);
+      setTemplateParamsLoading(true);
+      vscode.postMessage({ type: 'requestTemplateParams', templatePath, documentPath: documentPathRef.current });
+    }
+  }, [selectedNodeId]);
 
   // ── Push graph changes back to the YAML document ─────────────────────────
   const handleGraphChange = useCallback(
@@ -383,6 +429,8 @@ export default function App() {
             onClose={() => setSelectedNodeId(null)}
             taskInputSchema={taskInputSchema}
             taskInputsLoading={taskInputsLoading}
+            templateParamSchema={templateParamSchema}
+            templateParamsLoading={templateParamsLoading}
           />
         )}
       </div>

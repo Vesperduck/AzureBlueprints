@@ -16,6 +16,18 @@ export interface TaskInputDefinition {
   visibleRule?: string;
 }
 
+/**
+ * A single parameter defined in the `parameters:` block of an ADO YAML template file.
+ * Sourced by reading and parsing the local template file from the workspace.
+ */
+export interface TemplateParamDefinition {
+  name: string;
+  type: string;
+  displayName?: string;
+  default?: unknown;
+  values?: string[];
+}
+
 export interface PipelineTrigger {
   branches?: {
     include?: string[];

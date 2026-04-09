@@ -130,6 +130,7 @@
 .props-kind--trigger  { background: #3b3bff33; color: #9999ff; }
 .props-kind--stage    { background: #0078d433; color: #4fc3f7; }
 .props-kind--job      { background: #107c1033; color: #81c784; }
+.props-kind--template { background: #6e4fb333; color: #c4a8f5; }
 .props-kind--task,
 .props-kind--script,
 .props-kind--bash,

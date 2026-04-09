@@ -233,3 +233,18 @@ export interface TaskInputDefinition {
   options?: Record<string, string>;
   visibleRule?: string;
 }
+
+/**
+ * A single parameter defined in the `parameters:` block of an ADO YAML template file.
+ * Sourced by reading and parsing the local template file from the workspace.
+ */
+export interface TemplateParamDefinition {
+  name: string;
+  /** ADO parameter types: 'string'|'number'|'boolean'|'object'|'step'|'stepList'|'job'|'jobList'|'deployment'|'deploymentList'|'stage'|'stageList' */
+  type: string;
+  /** Optional display hint; falls back to `name` when absent. */
+  displayName?: string;
+  default?: unknown;
+  /** Allowed values — makes the field render as a select dropdown. */
+  values?: string[];
+}
