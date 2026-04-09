@@ -1,0 +1,23 @@
+theme: jekyll-theme-cayman
+
+title: Azure Blueprints
+description: >-
+  Visual graph editor for Azure DevOps YAML pipelines.
+  Open a pipeline file and view triggers, stages, jobs, and tasks as connected nodes
+  with live YAML synchronization.
+
+show_downloads: true
+
+# Exclude build artefacts and source files from the Jekyll build
+exclude:
+  - node_modules/
+  - out/
+  - webview-ui/
+  - __mocks__/
+  - "*.vsix"
+  - "*.vscodeignore"
+  - webpack.config.js
+  - jest.config.js
+  - "tsconfig*.json"
+  - package-lock.json
+  - CONTRIBUTING.md

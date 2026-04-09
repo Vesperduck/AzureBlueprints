@@ -1,0 +1,39 @@
+---
+---
+
+// ─── Azure Blueprints brand colours ──────────────────────────────────────────
+//
+//  Logo palette: vibrant orange flames (#E8510A) + azure-blue wings (#0078D4)
+//  Page header gradient mirrors the logo: orange → Azure blue
+//
+// These variables override jekyll-theme-cayman's !default values; they must
+// appear BEFORE the @import so the SCSS compiler picks them up.
+
+// Header gradient — left-to-right, matching the logo wings
+$header-bg-color-secondary: #e8510a;   // orange (flame / left wing)
+$header-bg-color:           #0078d4;   // Azure blue (right wing)
+
+// Headings and section titles
+$section-headings-color: #003167;      // dark navy
+
+// Body links
+$body-link-color: #0078d4;             // Azure blue
+
+// ─── Import the base Cayman theme ────────────────────────────────────────────
+@import "{{ site.theme }}";
+
+// ─── Additional tweaks ───────────────────────────────────────────────────────
+
+// Tighten the header button to use the same orange accent on hover
+.btn:hover {
+  background-color: #e8510a;
+  border-color: #c44409;
+}
+
+// Keep inline code readable against the Azure blue heading colour
+h1, h2, h3, h4, h5, h6 {
+  code {
+    color: inherit;
+    font-size: 0.9em;
+  }
+}
