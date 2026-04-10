@@ -86,6 +86,9 @@ export function pipelineToGraph(yaml: string): {
   // ── Stages pipeline ──────────────────────────────────────────────────────────
   if (pipeline.stages && pipeline.stages.length > 0) {
     let stageY = 0;
+    // Maps stage rawId → direct dependsOn list; used for transitive reduction.
+    const stageDepMap = new Map<string, string[]>();
+    const stageTransitiveCache = new Map<string, Set<string>>();
 
     for (const stage of pipeline.stages) {
       // ── Stage-level template reference ─────────────────────────────────────
@@ -115,6 +118,8 @@ export function pipelineToGraph(yaml: string): {
       stageNode.data.displayName = stageLabel;
       stageNode.data.condition = stage.condition;
       stageNode.data.dependsOn = normalizeDependsOn(stage.dependsOn);
+      // Register in the dependency map for transitive-reduction lookups.
+      if (stage.stage) { stageDepMap.set(stage.stage, stageNode.data.dependsOn); }
 
       // Store extended stage fields in details
       const stageDetails: Record<string, unknown> = {};
@@ -134,14 +139,24 @@ export function pipelineToGraph(yaml: string): {
 
       nodes.push(stageNode);
 
-      // Connect trigger → first stage or stage → stage via dependsOn
+      // Connect trigger → first stage or stage → stage via dependsOn.
+      // Apply transitive reduction: if dep D is already reachable transitively
+      // through another direct dependency of this stage, skip the D→stage edge
+      // so the graph renders a clean linear chain instead of a diamond.
       if (stageNode.data.dependsOn && stageNode.data.dependsOn.length > 0) {
         for (const dep of stageNode.data.dependsOn) {
-          const depNode = nodes.find(
-            (n) => n.data.rawId === dep && n.data.kind === 'stage'
+          const isRedundant = stageNode.data.dependsOn.some(
+            (otherDep) =>
+              otherDep !== dep &&
+              computeTransitiveDeps(otherDep, stageDepMap, stageTransitiveCache).has(dep)
           );
-          if (depNode) {
-            edges.push(makeEdge(depNode.id, stageId));
+          if (!isRedundant) {
+            const depNode = nodes.find(
+              (n) => n.data.rawId === dep && n.data.kind === 'stage'
+            );
+            if (depNode) {
+              edges.push(makeEdge(depNode.id, stageId));
+            }
           }
         }
       } else {
@@ -151,6 +166,9 @@ export function pipelineToGraph(yaml: string): {
       // Jobs inside stage
       const stageJobs = stage.jobs ?? [];
       let jobY = stageY;
+      // Maps job rawId → direct dependsOn list; scoped per stage for transitive reduction.
+      const jobDepMap = new Map<string, string[]>();
+      const jobTransitiveCache = new Map<string, Set<string>>();
 
       for (const job of stageJobs) {
         // ── Job-level template reference ──────────────────────────────────────
@@ -201,11 +219,21 @@ export function pipelineToGraph(yaml: string): {
         };
         nodes.push(jobNode);
         // Connect via dependsOn edges if present, else connect to parent stage.
+        // Apply transitive reduction: skip edge D→job when D is already reachable
+        // through another direct dependency of this job.
         const jobDeps = normalizeDependsOn(job.dependsOn);
+        if (jobKey) { jobDepMap.set(jobKey, jobDeps); }
         if (jobDeps.length > 0) {
           for (const dep of jobDeps) {
-            const depNode = nodes.find((n) => n.data.rawId === dep && n.data.kind === 'job');
-            if (depNode) { edges.push(makeEdge(depNode.id, jobId)); }
+            const isRedundant = jobDeps.some(
+              (otherDep) =>
+                otherDep !== dep &&
+                computeTransitiveDeps(otherDep, jobDepMap, jobTransitiveCache).has(dep)
+            );
+            if (!isRedundant) {
+              const depNode = nodes.find((n) => n.data.rawId === dep && n.data.kind === 'job');
+              if (depNode) { edges.push(makeEdge(depNode.id, jobId)); }
+            }
           }
         } else {
           edges.push(makeEdge(stageId, jobId));
@@ -261,6 +289,9 @@ export function pipelineToGraph(yaml: string): {
   } else if (pipeline.jobs && pipeline.jobs.length > 0) {
     // ── Jobs-only pipeline (no stages) ────────────────────────────────────────
     let jobY = 0;
+    // Maps job rawId → direct dependsOn list; used for transitive reduction.
+    const jobsOnlyDepMap = new Map<string, string[]>();
+    const jobsOnlyTransitiveCache = new Map<string, Set<string>>();
 
     for (const job of pipeline.jobs) {
       // ── Job-level template reference ───────────────────────────────────────
@@ -308,11 +339,21 @@ export function pipelineToGraph(yaml: string): {
       };
       nodes.push(jobNode);
       // Connect via dependsOn edges if present, else connect to trigger.
+      // Apply transitive reduction: skip edge D→job when D is already reachable
+      // through another direct dependency of this job.
       const jobDepsOnly = normalizeDependsOn(job.dependsOn);
+      if (jobKey) { jobsOnlyDepMap.set(jobKey, jobDepsOnly); }
       if (jobDepsOnly.length > 0) {
         for (const dep of jobDepsOnly) {
-          const depNode = nodes.find((n) => n.data.rawId === dep && n.data.kind === 'job');
-          if (depNode) { edges.push(makeEdge(depNode.id, jobId)); }
+          const isRedundant = jobDepsOnly.some(
+            (otherDep) =>
+              otherDep !== dep &&
+              computeTransitiveDeps(otherDep, jobsOnlyDepMap, jobsOnlyTransitiveCache).has(dep)
+          );
+          if (!isRedundant) {
+            const depNode = nodes.find((n) => n.data.rawId === dep && n.data.kind === 'job');
+            if (depNode) { edges.push(makeEdge(depNode.id, jobId)); }
+          }
         }
       } else {
         edges.push(makeEdge(triggerId, jobId));
@@ -799,6 +840,28 @@ function normalizeDependsOn(raw: unknown): string[] {
   if (typeof raw === 'string') { return [raw]; }
   if (Array.isArray(raw)) { return raw as string[]; }
   return [];
+}
+
+/**
+ * Returns the full transitive dependency set for a given stage rawId by
+ * recursively walking `depMap`. Results are memoised in `cache`.
+ */
+export function computeTransitiveDeps(
+  rawId: string,
+  depMap: Map<string, string[]>,
+  cache: Map<string, Set<string>>
+): Set<string> {
+  const hit = cache.get(rawId);
+  if (hit) { return hit; }
+  const result = new Set<string>();
+  for (const dep of depMap.get(rawId) ?? []) {
+    result.add(dep);
+    for (const transitive of computeTransitiveDeps(dep, depMap, cache)) {
+      result.add(transitive);
+    }
+  }
+  cache.set(rawId, result);
+  return result;
 }
 
 function describePool(pool: unknown): string {

@@ -8,7 +8,7 @@
 
 import type { Edge, Node } from 'reactflow';
 import * as jsYaml from 'js-yaml';
-import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, parseInputsRaw } from '../pipelineConverter';
+import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, parseInputsRaw, computeTransitiveDeps } from '../pipelineConverter';
 import type { GraphNodeData } from '../types/pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2481,5 +2481,268 @@ describe('template nodes', () => {
     const out = graphToPipeline(updatedNodes, edges);
     expect(out).toContain('template: templates/new.yml');
     expect(out).not.toContain('templates/old.yml');
+  });
+});
+
+// ── computeTransitiveDeps ──────────────────────────────────────────────────────
+
+describe('computeTransitiveDeps', () => {
+  it('returns empty set for a node with no dependencies', () => {
+    const depMap = new Map([['A', []]]);
+    const cache = new Map<string, Set<string>>();
+    expect(computeTransitiveDeps('A', depMap, cache).size).toBe(0);
+  });
+
+  it('returns direct deps for a node with no transitive chain', () => {
+    const depMap = new Map([['B', ['A']], ['A', []]]);
+    const cache = new Map<string, Set<string>>();
+    expect(computeTransitiveDeps('B', depMap, cache)).toEqual(new Set(['A']));
+  });
+
+  it('returns full transitive closure for a linear chain A→B→C', () => {
+    const depMap = new Map([['A', []], ['B', ['A']], ['C', ['B']]]);
+    const cache = new Map<string, Set<string>>();
+    // C directly depends on B; transitively also on A
+    expect(computeTransitiveDeps('C', depMap, cache)).toEqual(new Set(['A', 'B']));
+  });
+
+  it('memoises results into the cache', () => {
+    const depMap = new Map([['A', []], ['B', ['A']]]);
+    const cache = new Map<string, Set<string>>();
+    computeTransitiveDeps('B', depMap, cache);
+    expect(cache.has('B')).toBe(true);
+    expect(cache.get('B')).toEqual(new Set(['A']));
+  });
+
+  it('handles an unknown rawId gracefully (returns empty set)', () => {
+    const depMap = new Map<string, string[]>();
+    const cache = new Map<string, Set<string>>();
+    expect(computeTransitiveDeps('X', depMap, cache).size).toBe(0);
+  });
+});
+
+// ── Transitive reduction of stage edges ──────────────────────────────────────
+
+describe('stage edge transitive reduction', () => {
+  const ABC_YAML = `
+trigger: none
+stages:
+  - stage: A
+    jobs: []
+  - stage: B
+    dependsOn: A
+    jobs: []
+  - stage: C
+    dependsOn:
+      - A
+      - B
+    jobs: []
+`;
+
+  it('produces exactly 3 stage→stage edges for A→B→C with C depending on A and B', () => {
+    // trigger→A, A→B, B→C  (A→C is redundant and must be omitted)
+    const { nodes, edges } = pipelineToGraph(ABC_YAML);
+    const stageEdges = edges.filter((e) => {
+      const src = nodes.find((n) => n.id === e.source)?.data.kind;
+      const tgt = nodes.find((n) => n.id === e.target)?.data.kind;
+      return src === 'stage' && tgt === 'stage';
+    });
+    expect(stageEdges).toHaveLength(2); // A→B and B→C
+  });
+
+  it('does not include a direct A→C edge when B already transitively covers it', () => {
+    const { nodes, edges } = pipelineToGraph(ABC_YAML);
+    const stageA = nodes.find((n) => n.data.rawId === 'A')!;
+    const stageC = nodes.find((n) => n.data.rawId === 'C')!;
+    const hasDirectAtoC = edges.some((e) => e.source === stageA.id && e.target === stageC.id);
+    expect(hasDirectAtoC).toBe(false);
+  });
+
+  it('still includes the B→C edge', () => {
+    const { nodes, edges } = pipelineToGraph(ABC_YAML);
+    const stageB = nodes.find((n) => n.data.rawId === 'B')!;
+    const stageC = nodes.find((n) => n.data.rawId === 'C')!;
+    const hasBtoC = edges.some((e) => e.source === stageB.id && e.target === stageC.id);
+    expect(hasBtoC).toBe(true);
+  });
+
+  it('still produces A→B edge', () => {
+    const { nodes, edges } = pipelineToGraph(ABC_YAML);
+    const stageA = nodes.find((n) => n.data.rawId === 'A')!;
+    const stageB = nodes.find((n) => n.data.rawId === 'B')!;
+    const hasAtoB = edges.some((e) => e.source === stageA.id && e.target === stageB.id);
+    expect(hasAtoB).toBe(true);
+  });
+
+  it('preserves all edges when no redundancy exists (parallel stages both feed C)', () => {
+    const yaml = `
+trigger: none
+stages:
+  - stage: A
+    jobs: []
+  - stage: B
+    jobs: []
+  - stage: C
+    dependsOn:
+      - A
+      - B
+    jobs: []
+`;
+    // A and B are independent, both needed by C – neither is redundant
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const stageA = nodes.find((n) => n.data.rawId === 'A')!;
+    const stageB = nodes.find((n) => n.data.rawId === 'B')!;
+    const stageC = nodes.find((n) => n.data.rawId === 'C')!;
+    expect(edges.some((e) => e.source === stageA.id && e.target === stageC.id)).toBe(true);
+    expect(edges.some((e) => e.source === stageB.id && e.target === stageC.id)).toBe(true);
+  });
+
+  it('serialises stage C with only B in dependsOn after transitive reduction', () => {
+    // Edges are the authoritative source for YAML serialisation. Since A→C is
+    // omitted by transitive reduction (B already covers it), the emitted YAML
+    // for stage C lists only B — which is still valid Azure DevOps YAML.
+    const { nodes, edges } = pipelineToGraph(ABC_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { stages: Array<Record<string, unknown>> };
+    const stageC = parsed.stages.find((s) => s['stage'] === 'C') as Record<string, unknown>;
+    // dependsOn may be a string (single dep) or array; normalise for assertion
+    const dependsOn = [stageC['dependsOn']].flat() as string[];
+    expect(dependsOn).toContain('B');
+    expect(dependsOn).not.toContain('A'); // A is implied through B
+  });
+});
+
+// ── Job edge transitive reduction ─────────────────────────────────────────────
+
+const JOB_ABC_IN_STAGE_YAML = `
+trigger: none
+stages:
+  - stage: Build
+    jobs:
+      - job: A
+      - job: B
+        dependsOn: A
+      - job: C
+        dependsOn:
+          - A
+          - B
+`;
+
+const JOB_ABC_JOBS_ONLY_YAML = `
+trigger: none
+jobs:
+  - job: A
+  - job: B
+    dependsOn: A
+  - job: C
+    dependsOn:
+      - A
+      - B
+`;
+
+describe('job edge transitive reduction (inside a stage)', () => {
+  it('produces exactly 2 job→job edges for A→B→C with C depending on A and B', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_IN_STAGE_YAML);
+    const jobEdges = edges.filter((e) => {
+      const src = nodes.find((n) => n.id === e.source)?.data.kind;
+      const tgt = nodes.find((n) => n.id === e.target)?.data.kind;
+      return src === 'job' && tgt === 'job';
+    });
+    expect(jobEdges).toHaveLength(2); // A→B and B→C
+  });
+
+  it('does not include a direct A→C edge when B already transitively covers it', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_IN_STAGE_YAML);
+    const jobA = nodes.find((n) => n.data.rawId === 'A' && n.data.kind === 'job')!;
+    const jobC = nodes.find((n) => n.data.rawId === 'C' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobA.id && e.target === jobC.id)).toBe(false);
+  });
+
+  it('still includes the B→C edge', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_IN_STAGE_YAML);
+    const jobB = nodes.find((n) => n.data.rawId === 'B' && n.data.kind === 'job')!;
+    const jobC = nodes.find((n) => n.data.rawId === 'C' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobB.id && e.target === jobC.id)).toBe(true);
+  });
+
+  it('still produces A→B edge', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_IN_STAGE_YAML);
+    const jobA = nodes.find((n) => n.data.rawId === 'A' && n.data.kind === 'job')!;
+    const jobB = nodes.find((n) => n.data.rawId === 'B' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobA.id && e.target === jobB.id)).toBe(true);
+  });
+
+  it('preserves all edges when no redundancy exists (parallel jobs both feed C)', () => {
+    const yaml = `
+trigger: none
+stages:
+  - stage: Build
+    jobs:
+      - job: A
+      - job: B
+      - job: C
+        dependsOn:
+          - A
+          - B
+`;
+    const { nodes, edges } = pipelineToGraph(yaml);
+    const jobA = nodes.find((n) => n.data.rawId === 'A' && n.data.kind === 'job')!;
+    const jobB = nodes.find((n) => n.data.rawId === 'B' && n.data.kind === 'job')!;
+    const jobC = nodes.find((n) => n.data.rawId === 'C' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobA.id && e.target === jobC.id)).toBe(true);
+    expect(edges.some((e) => e.source === jobB.id && e.target === jobC.id)).toBe(true);
+  });
+
+  it('serialises job C with only B in dependsOn after transitive reduction', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_IN_STAGE_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { stages: Array<{ jobs: Array<Record<string, unknown>> }> };
+    const jobC = parsed.stages[0].jobs.find((j) => j['job'] === 'C') as Record<string, unknown>;
+    const dependsOn = [jobC['dependsOn']].flat() as string[];
+    expect(dependsOn).toContain('B');
+    expect(dependsOn).not.toContain('A');
+  });
+});
+
+describe('job edge transitive reduction (jobs-only pipeline)', () => {
+  it('produces exactly 2 job→job edges for A→B→C with C depending on A and B', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_JOBS_ONLY_YAML);
+    const jobEdges = edges.filter((e) => {
+      const src = nodes.find((n) => n.id === e.source)?.data.kind;
+      const tgt = nodes.find((n) => n.id === e.target)?.data.kind;
+      return src === 'job' && tgt === 'job';
+    });
+    expect(jobEdges).toHaveLength(2); // A→B and B→C
+  });
+
+  it('does not include a direct A→C edge when B already transitively covers it', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_JOBS_ONLY_YAML);
+    const jobA = nodes.find((n) => n.data.rawId === 'A' && n.data.kind === 'job')!;
+    const jobC = nodes.find((n) => n.data.rawId === 'C' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobA.id && e.target === jobC.id)).toBe(false);
+  });
+
+  it('still includes the B→C edge', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_JOBS_ONLY_YAML);
+    const jobB = nodes.find((n) => n.data.rawId === 'B' && n.data.kind === 'job')!;
+    const jobC = nodes.find((n) => n.data.rawId === 'C' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobB.id && e.target === jobC.id)).toBe(true);
+  });
+
+  it('still produces A→B edge', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_JOBS_ONLY_YAML);
+    const jobA = nodes.find((n) => n.data.rawId === 'A' && n.data.kind === 'job')!;
+    const jobB = nodes.find((n) => n.data.rawId === 'B' && n.data.kind === 'job')!;
+    expect(edges.some((e) => e.source === jobA.id && e.target === jobB.id)).toBe(true);
+  });
+
+  it('serialises job C with only B in dependsOn after transitive reduction', () => {
+    const { nodes, edges } = pipelineToGraph(JOB_ABC_JOBS_ONLY_YAML);
+    const out = graphToPipeline(nodes, edges);
+    const parsed = jsYaml.load(out) as { jobs: Array<Record<string, unknown>> };
+    const jobC = parsed.jobs.find((j) => j['job'] === 'C') as Record<string, unknown>;
+    const dependsOn = [jobC['dependsOn']].flat() as string[];
+    expect(dependsOn).toContain('B');
+    expect(dependsOn).not.toContain('A');
   });
 });

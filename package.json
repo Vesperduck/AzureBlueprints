@@ -2,7 +2,7 @@
   "name": "azure-blueprints",
   "displayName": "Azure Blueprints: Pipeline Graph Editor",
   "description": "Edit Azure DevOps YAML pipelines as a visual graph with live YAML synchronization.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "VesperWilde",
   "license": "MIT",
   "homepage": "https://vesperwilde.net/extensions/azure-blueprints",

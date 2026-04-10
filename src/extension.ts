@@ -13,7 +13,8 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showErrorMessage('No active editor. Open a YAML pipeline file first.');
         return;
       }
-      if (editor.document.languageId !== 'yaml') {
+      const lang = editor.document.languageId;
+      if (lang !== 'yaml' && lang !== 'azure-pipelines') {
         vscode.window.showWarningMessage('Azure Blueprints: the active file is not a YAML file.');
         return;
       }
