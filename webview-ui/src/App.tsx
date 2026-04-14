@@ -6,7 +6,8 @@ import PropertiesPanel from './components/panels/PropertiesPanel';
 import ContextTaskMenu from './components/ContextTaskMenu';
 import ContextEdgeMenu, { type EdgeDropChoice } from './components/ContextEdgeMenu';
 import ContextTriggerMenu from './components/ContextTriggerMenu';
-import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, type TriggerType } from './pipelineConverter';
+import ContextTemplateMenu from './components/ContextTemplateMenu';
+import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, expandTemplateNode, collapseTemplateNodes, type TriggerType } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
 import type { GraphNodeData, CatalogTask, TaskInputDefinition, TemplateParamDefinition } from './types/pipeline';
 import './App.css';
@@ -62,6 +63,17 @@ export default function App() {
     sourceKind: 'stage' | 'job';
     flowX: number;
     flowY: number;
+  } | null>(null);
+
+  // Template context menu — shown on right-click of a template node (expand)
+  // or an expanded node (collapse).
+  const [templateContextMenu, setTemplateContextMenu] = useState<{
+    x: number;
+    y: number;
+    mode: 'expand' | 'collapse';
+    templateNodeId?: string;
+    templatePath: string;
+    fromTemplateId?: string;
   } | null>(null);
 
   // Count of edit messages we've sent that haven't been echoed back yet.
@@ -162,8 +174,17 @@ export default function App() {
           setTemplateParamSchema(params);
           setTemplateParamsLoading(false);
         }
+      } else if (message.type === 'templateExpansionReady') {
+        // Expand the template node inline — view-only, no YAML write-back.
+        const result = expandTemplateNode(
+          message.templateNodeId,
+          message.yaml,
+          nodesRef.current,
+          edgesRef.current
+        );
+        setNodes(result.nodes);
+        setEdges(result.edges);
       } else if (message.type === 'templateLoaded') {
-        // Push current view onto the nav stack and switch to the template graph.
         const entry: NavEntry = {
           fileName: fileNameRef.current,
           absolutePath: activeDocPathRef.current,
@@ -341,6 +362,46 @@ export default function App() {
     []
   );
 
+  // Called when the user right-clicks a (non-expanded) template node.
+  const handleTemplateNodeContextMenu = useCallback(
+    (nodeId: string, templatePath: string, x: number, y: number) => {
+      setTemplateContextMenu({ x, y, mode: 'expand', templateNodeId: nodeId, templatePath });
+    },
+    []
+  );
+
+  // Called when the user right-clicks a node expanded inline from a template.
+  const handleExpandedNodeContextMenu = useCallback(
+    (fromTemplateId: string, templatePath: string, x: number, y: number) => {
+      setTemplateContextMenu({ x, y, mode: 'collapse', templatePath, fromTemplateId });
+    },
+    []
+  );
+
+  // Request the extension host to read the template file and send it back
+  // so we can expand it inline.
+  const handleExpandTemplate = useCallback(() => {
+    if (!templateContextMenu?.templateNodeId) { return; }
+    vscode.postMessage({
+      type: 'requestTemplateExpansion',
+      templatePath: templateContextMenu.templatePath,
+      documentPath: activeDocPathRef.current,
+      templateNodeId: templateContextMenu.templateNodeId,
+    });
+  }, [templateContextMenu]);
+
+  // Collapse all nodes expanded from the given template back into the placeholder.
+  const handleCollapseTemplate = useCallback(() => {
+    if (!templateContextMenu?.fromTemplateId) { return; }
+    const result = collapseTemplateNodes(
+      templateContextMenu.fromTemplateId,
+      nodesRef.current,
+      edgesRef.current
+    );
+    setNodes(result.nodes);
+    setEdges(result.edges);
+  }, [templateContextMenu]);
+
   // Navigate back to a specific breadcrumb level.
   // `index` is the position in navStack whose state we want to restore.
   const handleNavigateTo = useCallback(
@@ -502,6 +563,8 @@ export default function App() {
           onTaskConnectEnd={handleTaskConnectEnd}
           onEdgeDropEnd={handleEdgeDropEnd}
           onTemplateNodeDoubleClick={handleTemplateNodeDoubleClick}
+          onTemplateNodeContextMenu={handleTemplateNodeContextMenu}
+          onExpandedNodeContextMenu={handleExpandedNodeContextMenu}
         />
         </ReactFlowProvider>
 
@@ -533,6 +596,18 @@ export default function App() {
             y={triggerMenu.y}
             onSelect={handleTriggerSelect}
             onClose={() => setTriggerMenu(null)}
+          />
+        )}
+
+        {templateContextMenu && (
+          <ContextTemplateMenu
+            x={templateContextMenu.x}
+            y={templateContextMenu.y}
+            mode={templateContextMenu.mode}
+            templatePath={templateContextMenu.templatePath}
+            onExpand={handleExpandTemplate}
+            onCollapse={handleCollapseTemplate}
+            onClose={() => setTemplateContextMenu(null)}
           />
         )}
 

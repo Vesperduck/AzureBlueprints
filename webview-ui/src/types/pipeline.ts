@@ -198,6 +198,9 @@ export interface GraphNodeData {
   displayName?: string;
   enabled?: boolean;
   condition?: string;
+  /** Set when this node was expanded inline from a template node.
+   *  Value is the ID of the original template node so it can be collapsed. */
+  fromTemplateId?: string;
   continueOnError?: boolean;
   dependsOn?: string[];
   details?: Record<string, unknown>;

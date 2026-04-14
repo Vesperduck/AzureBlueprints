@@ -6,7 +6,7 @@ import './nodes.css';
 function StageNode({ data, selected }: NodeProps<GraphNodeData>) {
   const dependsOn = data.dependsOn ?? [];
   return (
-    <div className={`node node--stage ${selected ? 'node--selected' : ''} ${data.enabled === false ? 'node--disabled' : ''}`}>
+    <div className={`node node--stage ${selected ? 'node--selected' : ''} ${data.enabled === false ? 'node--disabled' : ''} ${data.fromTemplateId ? 'node--from-template' : ''}`}>
       <Handle type="target" position={Position.Top} id="in" />
 
       <div className="node__header">
@@ -27,6 +27,15 @@ function StageNode({ data, selected }: NodeProps<GraphNodeData>) {
       {dependsOn.length > 0 && (
         <div className="node__depends">
           <span className="node__detail-icon">⤵</span> {dependsOn.join(', ')}
+        </div>
+      )}
+
+      {data.fromTemplateId && (
+        <div
+          className="node__from-template-badge"
+          title={(data.details?.['__fromTemplatePath'] as string | undefined) ?? ''}
+        >
+          ⇒ {truncate((data.details?.['__fromTemplatePath'] as string | undefined) ?? 'template', 26)}
         </div>
       )}
 

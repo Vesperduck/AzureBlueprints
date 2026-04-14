@@ -104,6 +104,21 @@ Template references in Azure DevOps YAML (`- template: path.yml`) are parsed at 
 
 Template nodes store `details.templatePath` (the file path string) and `details.parametersRaw` (YAML-encoded parameters). Editing either field in the Properties panel immediately re-serializes the YAML.
 
+### Navigating into a template
+
+**Double-click** a template node to navigate into the referenced file. The editor switches to the template's graph and displays a breadcrumb trail at the top. Click any breadcrumb entry to navigate back.
+
+### Expanding a template inline
+
+**Right-click** a template node and choose **Expand template inline**. The extension reads the referenced file and inserts its internal nodes (stages, jobs, or tasks) directly into the current graph in place of the template node. Expanded nodes are visually distinguished with:
+
+- A **dashed purple border** on each node.
+- A **`⇒ <template path>` badge** at the bottom of each node.
+
+To collapse the sub-graph back to the template placeholder, **right-click any expanded node** and choose **Collapse back to template**. All expanded nodes are removed and the original template node is restored, including its external connections.
+
+> Note: Expand/collapse is a view-only operation. It does not modify the pipeline YAML.
+
 ## Getting Started
 
 ### Prerequisites

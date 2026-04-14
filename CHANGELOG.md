@@ -9,6 +9,19 @@ Versions match the `version` field in `package.json`.
 
 ## [Unreleased]
 
+### Added
+- **Template node inline expansion** – right-clicking a template node now shows a context menu with an "Expand template inline" action. The extension host reads the referenced template file and inserts its internal nodes and edges directly into the current graph in place of the template node. Expanded nodes are visually distinguished with a dashed purple border and a `⇒ <template path>` badge at the bottom of each node.
+- **Template collapse** – right-clicking any node that was expanded inline (identified by its `fromTemplateId`) shows a "Collapse back to template" action that removes the expanded sub-graph and restores the original template placeholder node, including all external edge connections.
+- **`expandTemplateNode` / `collapseTemplateNodes`** – two new exported functions in `pipelineConverter.ts` for expand/collapse graph mutations. `expandTemplateNode` parses the template YAML, filters the trigger, re-IDs sub-nodes to avoid collisions, offsets their positions relative to the template node, and re-wires all external boundary edges. `collapseTemplateNodes` reads the restore info stored on each expanded node and reverses the operation.
+- **`ContextTemplateMenu` component** – new floating context menu (`ContextTemplateMenu.tsx` / `ContextTemplateMenu.css`) that renders either an expand or collapse action depending on the right-clicked node type.
+- **`node--from-template` CSS class** – expanded nodes receive a dashed purple border (`rgba(138, 99, 210, 0.6)`) and a `node__from-template-badge` footer strip indicating their template origin. Applied in `nodes.css` and consumed by `StageNode`, `JobNode`, `TaskNode`, and `TemplateNode`.
+- **`fromTemplateId` field** – new optional field on `GraphNodeData` tracking which original template node each expanded node came from.
+- **`requestTemplateExpansion` message** – new webview→extension message that asks the extension host to read a template file. The host responds with `templateExpansionReady` carrying the raw YAML, which the webview uses to drive `expandTemplateNode`.
+
+### Tests
+- 10 new tests across `expandTemplateNode` (6) and `collapseTemplateNodes` (4) covering: template replacement, `fromTemplateId` marking, trigger exclusion, identity on missing/wrong node, intra-subgraph edge creation, expanded node removal, template restore, and node count invariant.
+- Total test count: **286** (up from 276).
+
 ---
 
 ## [0.1.5] – 2026-04-10

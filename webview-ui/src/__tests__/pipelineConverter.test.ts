@@ -8,7 +8,7 @@
 
 import type { Edge, Node } from 'reactflow';
 import * as jsYaml from 'js-yaml';
-import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, parseInputsRaw, computeTransitiveDeps } from '../pipelineConverter';
+import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, parseInputsRaw, computeTransitiveDeps, expandTemplateNode, collapseTemplateNodes } from '../pipelineConverter';
 import type { GraphNodeData } from '../types/pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2744,5 +2744,125 @@ describe('job edge transitive reduction (jobs-only pipeline)', () => {
     const dependsOn = [jobC['dependsOn']].flat() as string[];
     expect(dependsOn).toContain('B');
     expect(dependsOn).not.toContain('A');
+  });
+});
+
+// ── expandTemplateNode ───────────────────────────────────────────────────────
+
+const SIMPLE_TEMPLATE_YAML = `
+stages:
+  - stage: A
+    displayName: Stage A
+  - stage: B
+    displayName: Stage B
+    dependsOn: A
+`;
+
+const PIPELINE_WITH_TEMPLATE_YAML = `
+stages:
+  - stage: Build
+    displayName: Build
+  - template: templates/steps.yml
+`;
+
+describe('expandTemplateNode', () => {
+  it('replaces the template node with sub-graph nodes', () => {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const tmplNode = nodes.find((n) => n.data.kind === 'template')!;
+    expect(tmplNode).toBeDefined();
+
+    const result = expandTemplateNode(tmplNode.id, SIMPLE_TEMPLATE_YAML, nodes, edges);
+
+    // Template node should be gone
+    expect(result.nodes.find((n) => n.id === tmplNode.id)).toBeUndefined();
+    // Sub-graph nodes (excluding trigger) should be present
+    const stageA = result.nodes.find((n) => n.data.rawId === 'A' && n.data.kind === 'stage');
+    const stageB = result.nodes.find((n) => n.data.rawId === 'B' && n.data.kind === 'stage');
+    expect(stageA).toBeDefined();
+    expect(stageB).toBeDefined();
+  });
+
+  it('marks all expanded nodes with fromTemplateId', () => {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const tmplNode = nodes.find((n) => n.data.kind === 'template')!;
+    const result = expandTemplateNode(tmplNode.id, SIMPLE_TEMPLATE_YAML, nodes, edges);
+
+    const expanded = result.nodes.filter((n) => n.data.fromTemplateId);
+    expect(expanded.length).toBeGreaterThan(0);
+    expanded.forEach((n) => expect(n.data.fromTemplateId).toBe(tmplNode.id));
+  });
+
+  it('does not include the template trigger node in expanded sub-graph', () => {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const tmplNode = nodes.find((n) => n.data.kind === 'template')!;
+    const result = expandTemplateNode(tmplNode.id, SIMPLE_TEMPLATE_YAML, nodes, edges);
+
+    // Trigger from SIMPLE_TEMPLATE_YAML should not appear in result (it was filtered out)
+    const triggerCount = result.nodes.filter((n) => n.data.kind === 'trigger').length;
+    // Only the original pipeline trigger remains
+    expect(triggerCount).toBe(1);
+  });
+
+  it('returns unchanged graph when node id does not exist', () => {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const result = expandTemplateNode('nonexistent-id', SIMPLE_TEMPLATE_YAML, nodes, edges);
+    expect(result.nodes).toEqual(nodes);
+    expect(result.edges).toEqual(edges);
+  });
+
+  it('returns unchanged graph when node is not a template kind', () => {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const stageNode = nodes.find((n) => n.data.kind === 'stage')!;
+    const result = expandTemplateNode(stageNode.id, SIMPLE_TEMPLATE_YAML, nodes, edges);
+    expect(result.nodes).toEqual(nodes);
+    expect(result.edges).toEqual(edges);
+  });
+
+  it('creates intra-subgraph edge between stage A and B', () => {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const tmplNode = nodes.find((n) => n.data.kind === 'template')!;
+    const result = expandTemplateNode(tmplNode.id, SIMPLE_TEMPLATE_YAML, nodes, edges);
+
+    const stageA = result.nodes.find((n) => n.data.rawId === 'A')!;
+    const stageB = result.nodes.find((n) => n.data.rawId === 'B')!;
+    expect(result.edges.some((e) => e.source === stageA.id && e.target === stageB.id)).toBe(true);
+  });
+});
+
+// ── collapseTemplateNodes ────────────────────────────────────────────────────
+
+describe('collapseTemplateNodes', () => {
+  function buildExpanded() {
+    const { nodes, edges } = pipelineToGraph(PIPELINE_WITH_TEMPLATE_YAML);
+    const tmplNode = nodes.find((n) => n.data.kind === 'template')!;
+    return { original: { nodes, edges, tmplNodeId: tmplNode.id }, expanded: expandTemplateNode(tmplNode.id, SIMPLE_TEMPLATE_YAML, nodes, edges) };
+  }
+
+  it('removes all expanded nodes', () => {
+    const { original, expanded } = buildExpanded();
+    const result = collapseTemplateNodes(original.tmplNodeId, expanded.nodes, expanded.edges);
+    const remaining = result.nodes.filter((n) => n.data.fromTemplateId === original.tmplNodeId);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('restores the original template node', () => {
+    const { original, expanded } = buildExpanded();
+    const result = collapseTemplateNodes(original.tmplNodeId, expanded.nodes, expanded.edges);
+    const restored = result.nodes.find((n) => n.id === original.tmplNodeId);
+    expect(restored).toBeDefined();
+    expect(restored!.data.kind).toBe('template');
+  });
+
+  it('returns unchanged graph when fromTemplateId does not exist', () => {
+    const { expanded } = buildExpanded();
+    const result = collapseTemplateNodes('nonexistent', expanded.nodes, expanded.edges);
+    expect(result.nodes).toEqual(expanded.nodes);
+    expect(result.edges).toEqual(expanded.edges);
+  });
+
+  it('total node count matches original after collapse', () => {
+    const { original, expanded } = buildExpanded();
+    const result = collapseTemplateNodes(original.tmplNodeId, expanded.nodes, expanded.edges);
+    expect(result.nodes.length).toBe(original.nodes.length);
   });
 });

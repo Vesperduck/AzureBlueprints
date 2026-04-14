@@ -1,0 +1,73 @@
+name: Pre-release on PR Merge
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+concurrency:
+  group: prerelease
+  cancel-in-progress: false
+
+jobs:
+  prerelease:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Package pre-release VSIX and tag
+        id: build
+        run: |
+          set -euo pipefail
+
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}-pre.${{ github.run_number }}"
+
+          npx @vscode/vsce@3.3.2 package --pre-release --no-dependencies
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.build.outputs.tag }}
+          name: ${{ steps.build.outputs.tag }}
+          target_commitish: ${{ steps.build.outputs.sha }}
+          prerelease: true
+          generate_release_notes: true
+          files: "*.vsix"
+
+      - name: Publish to VS Code Marketplace (pre-release)
+        run: npx @vscode/vsce@3.3.2 publish --pre-release --no-dependencies --packagePath azure-blueprints-${{ steps.build.outputs.version }}.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}

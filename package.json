@@ -2,7 +2,7 @@
   "name": "azure-blueprints",
   "displayName": "Azure Blueprints: Pipeline Graph Editor",
   "description": "Edit Azure DevOps YAML pipelines as a visual graph with live YAML synchronization.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "VesperWilde",
   "license": "MIT",
   "homepage": "https://vesperwilde.net/extensions/azure-blueprints",
@@ -119,6 +119,9 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "package": "vsce package",
+    "package:prerelease": "vsce package --pre-release",
+    "publish": "vsce publish",
+    "publish:prerelease": "vsce publish --pre-release",
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
@@ -130,6 +133,7 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.7.1",
     "css-loader": "^6.10.0",
     "eslint": "^8.56.0",
     "jest": "^30.3.0",

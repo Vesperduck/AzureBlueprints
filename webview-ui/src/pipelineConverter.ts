@@ -1374,3 +1374,208 @@ function buildStepObject(tn: Node<GraphNodeData>): Record<string, unknown> {
 
   return step;
 }
+
+// ── Template expansion ────────────────────────────────────────────────────────
+
+/** Restore info serialised into every expanded node so collapse can recover it. */
+export interface ExpandedTemplateRestoreInfo {
+  id: string;
+  type?: string;
+  position: { x: number; y: number };
+  data: GraphNodeData;
+}
+
+/**
+ * Expands a template node inline by parsing the template YAML and inserting
+ * its sub-graph into the current graph in place of the template node.
+ *
+ * All inserted nodes carry `fromTemplateId = templateNode.id` so they can be
+ * identified as belonging to a template and collapsed back later.
+ * The restore info needed for collapse is stored on every inserted node in
+ * `details['__expandedFromTemplate']` as a JSON string.
+ */
+export function expandTemplateNode(
+  templateNodeId: string,
+  templateYaml: string,
+  currentNodes: Node<GraphNodeData>[],
+  currentEdges: Edge[]
+): { nodes: Node<GraphNodeData>[]; edges: Edge[] } {
+  const templateNode = currentNodes.find((n) => n.id === templateNodeId);
+  if (!templateNode || templateNode.data.kind !== 'template') {
+    return { nodes: currentNodes, edges: currentEdges };
+  }
+
+  // Parse the template content
+  let subNodes: Node<GraphNodeData>[];
+  let subEdges: Edge[];
+  try {
+    ({ nodes: subNodes, edges: subEdges } = pipelineToGraph(templateYaml));
+  } catch {
+    return { nodes: currentNodes, edges: currentEdges };
+  }
+
+  // Drop the trigger node and every edge touching it
+  const subTrigger = subNodes.find((n) => n.data.kind === 'trigger');
+  const subTriggerEdgeIds = new Set(
+    subTrigger
+      ? subEdges.filter((e) => e.source === subTrigger.id || e.target === subTrigger.id).map((e) => e.id)
+      : []
+  );
+  const filteredSubNodes = subNodes.filter((n) => n.data.kind !== 'trigger');
+  const filteredSubEdges = subEdges.filter((e) => !subTriggerEdgeIds.has(e.id));
+
+  if (filteredSubNodes.length === 0) {
+    return { nodes: currentNodes, edges: currentEdges };
+  }
+
+  // Find entry nodes (root of sub-graph — no intra-subgraph incoming edges)
+  const intraTargets = new Set(filteredSubEdges.map((e) => e.target));
+  const rootSubNodeIds = new Set(filteredSubNodes.filter((n) => !intraTargets.has(n.id)).map((n) => n.id));
+
+  // Find exit nodes (leaf of sub-graph — no intra-subgraph outgoing edges)
+  const intraSources = new Set(filteredSubEdges.map((e) => e.source));
+  const leafSubNodeIds = new Set(filteredSubNodes.filter((n) => !intraSources.has(n.id)).map((n) => n.id));
+
+  // Offset positions so the top-left of the sub-graph lands at the template node's position
+  const minSubX = Math.min(...filteredSubNodes.map((n) => n.position.x));
+  const minSubY = Math.min(...filteredSubNodes.map((n) => n.position.y));
+  const offsetX = templateNode.position.x - minSubX;
+  const offsetY = templateNode.position.y - minSubY;
+
+  // New unique IDs to avoid collisions with the existing graph
+  const idPrefix = `texp-${Date.now()}`;
+  const idMap = new Map<string, string>();
+  filteredSubNodes.forEach((n, i) => { idMap.set(n.id, `${idPrefix}-${i}`); });
+
+  // Restore info every expanded node carries
+  const restoreInfo: ExpandedTemplateRestoreInfo = {
+    id: templateNode.id,
+    type: templateNode.type,
+    position: templateNode.position,
+    data: templateNode.data,
+  };
+  const restoreRaw = JSON.stringify(restoreInfo);
+  const fromTemplatePath =
+    (templateNode.data.details?.['templatePath'] as string | undefined) ?? templateNode.data.label;
+
+  const newSubNodes: Node<GraphNodeData>[] = filteredSubNodes.map((n) => ({
+    ...n,
+    id: idMap.get(n.id)!,
+    position: { x: n.position.x + offsetX, y: n.position.y + offsetY },
+    data: {
+      ...n.data,
+      fromTemplateId: templateNodeId,
+      details: {
+        ...n.data.details,
+        __fromTemplatePath: fromTemplatePath,
+        __expandedFromTemplate: restoreRaw,
+      },
+    },
+  }));
+
+  const newSubEdges: Edge[] = filteredSubEdges
+    .filter((e) => idMap.has(e.source) && idMap.has(e.target))
+    .map((e) => ({
+      ...e,
+      id: `${idPrefix}-e-${e.id}`,
+      source: idMap.get(e.source)!,
+      target: idMap.get(e.target)!,
+    }));
+
+  // Re-wire current edges: predecessors → template → successors
+  const incomingEdges = currentEdges.filter((e) => e.target === templateNodeId);
+  const outgoingEdges = currentEdges.filter((e) => e.source === templateNodeId);
+  const otherEdges = currentEdges.filter(
+    (e) => e.target !== templateNodeId && e.source !== templateNodeId
+  );
+
+  const rewiredIncoming: Edge[] = [];
+  for (const inc of incomingEdges) {
+    for (const rootId of rootSubNodeIds) {
+      const newRootId = idMap.get(rootId)!;
+      rewiredIncoming.push({ ...inc, id: `${inc.id}-to-${newRootId}`, target: newRootId });
+    }
+  }
+
+  const rewiredOutgoing: Edge[] = [];
+  for (const out of outgoingEdges) {
+    for (const leafId of leafSubNodeIds) {
+      const newLeafId = idMap.get(leafId)!;
+      rewiredOutgoing.push({ ...out, id: `${newLeafId}-to-${out.id}`, source: newLeafId });
+    }
+  }
+
+  return {
+    nodes: [...currentNodes.filter((n) => n.id !== templateNodeId), ...newSubNodes],
+    edges: [...otherEdges, ...newSubEdges, ...rewiredIncoming, ...rewiredOutgoing],
+  };
+}
+
+/**
+ * Collapses all nodes that were expanded from the given template node back into
+ * the original single template node, re-wiring external edges in the process.
+ */
+export function collapseTemplateNodes(
+  fromTemplateId: string,
+  currentNodes: Node<GraphNodeData>[],
+  currentEdges: Edge[]
+): { nodes: Node<GraphNodeData>[]; edges: Edge[] } {
+  const expandedNodes = currentNodes.filter((n) => n.data.fromTemplateId === fromTemplateId);
+  if (expandedNodes.length === 0) { return { nodes: currentNodes, edges: currentEdges }; }
+
+  const restoreRaw = expandedNodes[0].data.details?.['__expandedFromTemplate'] as string | undefined;
+  if (!restoreRaw) { return { nodes: currentNodes, edges: currentEdges }; }
+
+  let restoreInfo: ExpandedTemplateRestoreInfo;
+  try {
+    restoreInfo = JSON.parse(restoreRaw) as ExpandedTemplateRestoreInfo;
+  } catch {
+    return { nodes: currentNodes, edges: currentEdges };
+  }
+
+  const expandedIds = new Set(expandedNodes.map((n) => n.id));
+
+  // Edges that cross the boundary (external ↔ internal)
+  const externalIncoming = currentEdges.filter(
+    (e) => !expandedIds.has(e.source) && expandedIds.has(e.target)
+  );
+  const externalOutgoing = currentEdges.filter(
+    (e) => expandedIds.has(e.source) && !expandedIds.has(e.target)
+  );
+  const otherEdges = currentEdges.filter(
+    (e) => !expandedIds.has(e.source) && !expandedIds.has(e.target)
+  );
+
+  const restoredNode: Node<GraphNodeData> = {
+    id: restoreInfo.id,
+    type: restoreInfo.type ?? 'template',
+    position: restoreInfo.position,
+    data: restoreInfo.data,
+  };
+
+  // Deduplicate re-wired edges
+  const seenIn = new Set<string>();
+  const rewiredIncoming: Edge[] = [];
+  for (const e of externalIncoming) {
+    const key = `${e.source}->${restoredNode.id}`;
+    if (!seenIn.has(key)) {
+      seenIn.add(key);
+      rewiredIncoming.push({ ...e, id: key, target: restoredNode.id });
+    }
+  }
+
+  const seenOut = new Set<string>();
+  const rewiredOutgoing: Edge[] = [];
+  for (const e of externalOutgoing) {
+    const key = `${restoredNode.id}->${e.target}`;
+    if (!seenOut.has(key)) {
+      seenOut.add(key);
+      rewiredOutgoing.push({ ...e, id: key, source: restoredNode.id });
+    }
+  }
+
+  return {
+    nodes: [...currentNodes.filter((n) => !expandedIds.has(n.id)), restoredNode],
+    edges: [...otherEdges, ...rewiredIncoming, ...rewiredOutgoing],
+  };
+}

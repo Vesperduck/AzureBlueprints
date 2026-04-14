@@ -204,6 +204,29 @@ export class PipelineEditorProvider implements vscode.CustomTextEditorProvider {
             }
             break;
           }
+
+          case 'requestTemplateExpansion': {
+            // Read the template file and send its YAML back so the webview can
+            // expand the template node inline without navigating away.
+            try {
+              const docDir = path.dirname(message.documentPath);
+              const templateAbs = path.resolve(docDir, message.templatePath);
+              const fileUri = vscode.Uri.file(templateAbs);
+              const bytes = await vscode.workspace.fs.readFile(fileUri);
+              const yaml = Buffer.from(bytes).toString('utf8');
+              webviewPanel.webview.postMessage({
+                type: 'templateExpansionReady',
+                templateNodeId: message.templateNodeId,
+                yaml,
+              });
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : String(err);
+              vscode.window.showErrorMessage(
+                `Pipeline Graph: Cannot expand template \u2013 ${msg}`
+              );
+            }
+            break;
+          }
         }
       }
     );
@@ -266,7 +289,8 @@ type WebviewMessage =
   | { type: 'requestTaskCatalog' }
   | { type: 'requestTaskInputs'; taskRef: string }
   | { type: 'requestTemplateParams'; templatePath: string; documentPath: string }
-  | { type: 'loadTemplate'; templatePath: string; documentPath: string };
+  | { type: 'loadTemplate'; templatePath: string; documentPath: string }
+  | { type: 'requestTemplateExpansion'; templatePath: string; documentPath: string; templateNodeId: string };
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

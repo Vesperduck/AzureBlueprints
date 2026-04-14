@@ -24,6 +24,7 @@ function TaskNode({ data, selected }: NodeProps<GraphNodeData>) {
         `node--${data.kind}`,
         selected ? 'node--selected' : '',
         data.enabled === false ? 'node--disabled' : '',
+        data.fromTemplateId ? 'node--from-template' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -48,6 +49,15 @@ function TaskNode({ data, selected }: NodeProps<GraphNodeData>) {
       {data.condition && (
         <div className="node__detail node__detail--condition" title={data.condition}>
           <span className="node__detail-icon">⚙</span> {truncate(data.condition, 26)}
+        </div>
+      )}
+
+      {data.fromTemplateId && (
+        <div
+          className="node__from-template-badge"
+          title={(data.details?.['__fromTemplatePath'] as string | undefined) ?? ''}
+        >
+          ⇒ {truncate((data.details?.['__fromTemplatePath'] as string | undefined) ?? 'template', 26)}
         </div>
       )}
 

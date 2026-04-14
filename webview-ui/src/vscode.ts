@@ -20,7 +20,8 @@ export type WebviewToExtensionMessage =
   | { type: 'requestTaskCatalog' }
   | { type: 'requestTaskInputs'; taskRef: string }
   | { type: 'requestTemplateParams'; templatePath: string; documentPath: string }
-  | { type: 'loadTemplate'; templatePath: string; documentPath: string };
+  | { type: 'loadTemplate'; templatePath: string; documentPath: string }
+  | { type: 'requestTemplateExpansion'; templatePath: string; documentPath: string; templateNodeId: string };
 
 // ── Message shapes (extension → webview) ─────────────────────────────────────
 
@@ -60,7 +61,13 @@ export interface TemplateLoadedMessage {
   absolutePath: string;
 }
 
-export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage | TaskInputsReadyMessage | TemplateParamsReadyMessage | TemplateLoadedMessage;
+export interface TemplateExpansionReadyMessage {
+  type: 'templateExpansionReady';
+  templateNodeId: string;
+  yaml: string;
+}
+
+export type ExtensionToWebviewMessage = UpdateMessage | TaskCatalogReadyMessage | TaskInputsReadyMessage | TemplateParamsReadyMessage | TemplateLoadedMessage | TemplateExpansionReadyMessage;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

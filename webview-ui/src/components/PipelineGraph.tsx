@@ -126,6 +126,12 @@ interface PipelineGraphProps {
   /** Called when a template node is double-clicked. `templatePath` is the
    *  relative path stored in `details.templatePath`. */
   onTemplateNodeDoubleClick?: (templatePath: string) => void;
+  /** Called when the user right-clicks a template node that has not yet been
+   *  expanded. Use to show an expand context menu. */
+  onTemplateNodeContextMenu?: (nodeId: string, templatePath: string, x: number, y: number) => void;
+  /** Called when the user right-clicks a node that was expanded inline from a
+   *  template. Use to show a collapse context menu. */
+  onExpandedNodeContextMenu?: (fromTemplateId: string, templatePath: string, x: number, y: number) => void;
 }
 
 export default function PipelineGraph({
@@ -139,6 +145,8 @@ export default function PipelineGraph({
   onTaskConnectEnd,
   onEdgeDropEnd,
   onTemplateNodeDoubleClick,
+  onTemplateNodeContextMenu,
+  onExpandedNodeContextMenu,
 }: PipelineGraphProps) {
   // Refs kept synchronously up-to-date within the same JS tick.
   const currentNodes = useRef<Node<GraphNodeData>[]>(nodes);
@@ -361,6 +369,26 @@ export default function PipelineGraph({
     [onTemplateNodeDoubleClick]
   );
 
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node<GraphNodeData>) => {
+      event.preventDefault();
+      // An expanded node (right-click → collapse)
+      if (node.data.fromTemplateId) {
+        const templatePath = (node.data.details?.['__fromTemplatePath'] as string | undefined) ?? 'template';
+        onExpandedNodeContextMenu?.(node.data.fromTemplateId, templatePath, event.clientX, event.clientY);
+        return;
+      }
+      // A template node (right-click → expand)
+      if (node.data.kind === 'template') {
+        const templatePath = (node.data.details?.['templatePath'] as string | undefined) ?? '';
+        if (templatePath) {
+          onTemplateNodeContextMenu?.(node.id, templatePath, event.clientX, event.clientY);
+        }
+      }
+    },
+    [onTemplateNodeContextMenu, onExpandedNodeContextMenu]
+  );
+
   const handlePaneClick = useCallback(() => {
     onNodeSelect(null);
   }, [onNodeSelect]);
@@ -428,6 +456,7 @@ export default function PipelineGraph({
         onEdgeUpdateEnd={handleEdgeUpdateEnd}
         onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeContextMenu={handleNodeContextMenu}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
         fitView

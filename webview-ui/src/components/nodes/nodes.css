@@ -149,3 +149,22 @@
 
 .node--template .node__header { background: #6e4fb322; color: #c4a8f5; }
 .node--template               { border: 2px dashed #6e4fb3; background: #1a1228; min-width: 200px; }
+
+/* ── Inline-expanded-from-template nodes ────────────────────────────────────── */
+
+.node--from-template {
+  border-style: dashed !important;
+  border-color: rgba(138, 99, 210, 0.6) !important;
+}
+
+.node__from-template-badge {
+  padding: 2px 8px 3px;
+  font-size: 10px;
+  text-align: center;
+  background: rgba(110, 79, 179, 0.15);
+  color: #ab87e8;
+  border-top: 1px solid rgba(110, 79, 179, 0.2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

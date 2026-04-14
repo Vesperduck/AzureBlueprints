@@ -14,6 +14,7 @@ function TemplateNode({ data, selected }: NodeProps<GraphNodeData>) {
         'node',
         'node--template',
         selected ? 'node--selected' : '',
+        data.fromTemplateId ? 'node--from-template' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -31,6 +32,15 @@ function TemplateNode({ data, selected }: NodeProps<GraphNodeData>) {
 
       {hasParams && (
         <div className="node__sub">+ parameters</div>
+      )}
+
+      {data.fromTemplateId && (
+        <div
+          className="node__from-template-badge"
+          title={(data.details?.['__fromTemplatePath'] as string | undefined) ?? ''}
+        >
+          ⇒ {truncate((data.details?.['__fromTemplatePath'] as string | undefined) ?? 'template', 26)}
+        </div>
       )}
 
       <Handle type="source" position={Position.Bottom} id="out" />
