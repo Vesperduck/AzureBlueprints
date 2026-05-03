@@ -1,0 +1,132 @@
+/* ── Palette Panel ───────────────────────────────────────────────────────────── */
+
+.palette-panel {
+  width: 210px;
+  flex-shrink: 0;
+  height: 100%;
+  background: #252526;
+  border-right: 1px solid #3c3c3c;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.palette-header {
+  padding: 9px 12px 8px;
+  border-bottom: 1px solid #3c3c3c;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #aaa;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.palette-header__icon {
+  color: #0078d4;
+  font-size: 13px;
+}
+
+.palette-search {
+  padding: 7px 10px 5px;
+  flex-shrink: 0;
+}
+
+.palette-search__input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #3c3c3c;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: #ccc;
+  font-size: 11px;
+  outline: none;
+  font-family: 'Segoe UI', sans-serif;
+  transition: border-color 0.1s;
+}
+
+.palette-search__input:focus {
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px rgba(0, 120, 212, 0.3);
+}
+
+.palette-search__input::placeholder {
+  color: #666;
+}
+
+.palette-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.palette-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.palette-list::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.palette-list::-webkit-scrollbar-thumb {
+  background: #484848;
+  border-radius: 3px;
+}
+
+.palette-category {
+  padding: 7px 12px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #666;
+  user-select: none;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 12px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.palette-item__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.palette-item__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d4d4d4;
+  line-height: 1.3;
+}
+
+.palette-item__desc {
+  font-size: 10px;
+  color: #777;
+  line-height: 1.3;
+}
+
+.palette-hint {
+  padding: 7px 12px;
+  font-size: 10px;
+  color: #555;
+  border-top: 1px solid #3c3c3c;
+  line-height: 1.6;
+  flex-shrink: 0;
+}

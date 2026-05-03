@@ -2,17 +2,29 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ReactFlowProvider } from 'reactflow';
 import { getVsCodeApi, ExtensionToWebviewMessage } from './vscode';
 import PipelineGraph from './components/PipelineGraph';
+import PalettePanel from './components/PalettePanel';
 import PropertiesPanel from './components/panels/PropertiesPanel';
 import ContextTaskMenu from './components/ContextTaskMenu';
 import ContextEdgeMenu, { type EdgeDropChoice } from './components/ContextEdgeMenu';
 import ContextTriggerMenu from './components/ContextTriggerMenu';
 import ContextTemplateMenu from './components/ContextTemplateMenu';
+import YamlModal from './components/YamlModal';
 import { pipelineToGraph, graphToPipeline, insertTaskNode, insertTriggerNode, expandTemplateNode, collapseTemplateNodes, type TriggerType } from './pipelineConverter';
 import type { Node, Edge } from 'reactflow';
-import type { GraphNodeData, CatalogTask, TaskInputDefinition, TemplateParamDefinition } from './types/pipeline';
+import type { GraphNodeData, GraphNodeKind, CatalogTask, TaskInputDefinition, TemplateParamDefinition } from './types/pipeline';
 import './App.css';
 
 const vscode = getVsCodeApi();
+
+declare global {
+  interface Window { __extIconUri?: string; }
+}
+
+export interface GraphTweaks {
+  edgeAnimation: boolean;
+  showMinimap: boolean;
+  showGrid: boolean;
+}
 
 /** One level of the in-webview navigation stack. */
 interface NavEntry {
@@ -25,92 +37,59 @@ interface NavEntry {
 export default function App() {
   const [nodes, setNodes] = useState<Node<GraphNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
-  // Track selected node by ID so the panel always reads fresh data from `nodes`
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
-  const [documentPath, setDocumentPath] = useState<string>('');
+
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [showYaml, setShowYaml] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [showTweaks, setShowTweaks] = useState(false);
+  const [tweaks, setTweaks] = useState<GraphTweaks>({
+    edgeAnimation: true,
+    showMinimap: true,
+    showGrid: true,
+  });
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2800);
+  }, []);
 
   // ── Template navigation stack ──────────────────────────────────────────────
-  // Each entry captures the view that was pushed aside when navigating into a
-  // template. navStack[0] = root document, navStack[n-1] = direct parent.
   const [navStack, setNavStack] = useState<NavEntry[]>([]);
   const navStackRef = useRef<NavEntry[]>([]);
-
-  // The absolute path of the document currently being viewed and edited
-  // (the original pipeline path at root, or the template's path when navigated).
   const activeDocPathRef = useRef<string>('');
-
-  // Ref mirror of fileName so the stale message-handler closure can read it.
   const fileNameRef = useRef<string>('');
   useEffect(() => { fileNameRef.current = fileName; }, [fileName]);
+
   const [parseError, setParseError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    loading: boolean;
-    tasks: CatalogTask[];
+    x: number; y: number; loading: boolean; tasks: CatalogTask[];
   } | null>(null);
-
-  // Trigger creation menu — shown when there is no trigger node yet
   const [triggerMenu, setTriggerMenu] = useState<{ x: number; y: number } | null>(null);
-
-  // Edge-drop menu — shown when user drags from a stage or job onto empty space
   const [edgeDropMenu, setEdgeDropMenu] = useState<{
-    x: number;
-    y: number;
-    sourceNodeId: string;
-    sourceLabel: string;
-    sourceKind: 'stage' | 'job';
-    flowX: number;
-    flowY: number;
+    x: number; y: number; sourceNodeId: string; sourceLabel: string;
+    sourceKind: 'stage' | 'job'; flowX: number; flowY: number;
   } | null>(null);
-
-  // Template context menu — shown on right-click of a template node (expand)
-  // or an expanded node (collapse).
   const [templateContextMenu, setTemplateContextMenu] = useState<{
-    x: number;
-    y: number;
-    mode: 'expand' | 'collapse';
-    templateNodeId?: string;
-    templatePath: string;
-    fromTemplateId?: string;
+    x: number; y: number; mode: 'expand' | 'collapse';
+    templateNodeId?: string; templatePath: string; fromTemplateId?: string;
   } | null>(null);
 
-  // Count of edit messages we've sent that haven't been echoed back yet.
-  // Each sent edit increments this; each incoming update decrements and is
-  // ignored if the count is still positive. Only updates that arrive when
-  // the counter reaches zero are genuine external edits (e.g. the user
-  // editing the raw YAML file directly).
   const pendingEditCount = useRef(0);
-
-  // Ref mirror of selectedNodeId so the stale message-handler closure can
-  // read the current selection without needing to be added to its deps array.
   const selectedNodeIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    selectedNodeIdRef.current = selectedNodeId;
-  }, [selectedNodeId]);
-
-  // Ref mirrors of nodes/edges — kept fresh so the stale message-handler
-  // closure can read latest state for insertTaskNode.
+  useEffect(() => { selectedNodeIdRef.current = selectedNodeId; }, [selectedNodeId]);
   const nodesRef = useRef<typeof nodes>([]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   const edgesRef = useRef<typeof edges>([]);
   useEffect(() => { edgesRef.current = edges; }, [edges]);
-
-  // When a job→empty-space drag spawns the context menu, remember which job
-  // node the drag originated from so the inserted task gets wired to it.
   const jobDragSourceRef = useRef<string | null>(null);
 
-  // ── Task input schema (fetched per task reference, cached in-session) ─────
   const [taskInputSchema, setTaskInputSchema] = useState<TaskInputDefinition[] | null>(null);
   const [taskInputsLoading, setTaskInputsLoading] = useState(false);
-  // Per-taskRef cache so we don't re-fetch the same schema twice
   const taskInputsCacheRef = useRef<Map<string, TaskInputDefinition[]>>(new Map());
-
-  // ── Template parameter schema (fetched when a template node is selected) ──
   const [templateParamSchema, setTemplateParamSchema] = useState<TemplateParamDefinition[] | null>(null);
   const [templateParamsLoading, setTemplateParamsLoading] = useState(false);
-  // Per-templatePath cache (keyed by templatePath string)
   const templateParamsCacheRef = useRef<Map<string, TemplateParamDefinition[]>>(new Map());
 
   // ── Listen for messages from the extension host ───────────────────────────
@@ -118,25 +97,18 @@ export default function App() {
     const handler = (event: MessageEvent<ExtensionToWebviewMessage>) => {
       const message = event.data;
       if (message.type === 'update') {
-        // While navigated into a template, suppress incoming updates about the
-        // primary document so the graph doesn't revert to the root pipeline.
         if (navStackRef.current.length > 0) { return; }
-        // Ignore echo-backs of our own edits regardless of order/timing
         if (pendingEditCount.current > 0) {
           pendingEditCount.current -= 1;
           return;
         }
-        // Genuine external update (user edited the YAML file directly)
         setFileName(message.fileName);
-        setDocumentPath(message.documentPath);
         activeDocPathRef.current = message.documentPath;
         try {
           const { nodes: n, edges: e } = pipelineToGraph(message.yaml);
           setNodes(n);
           setEdges(e);
           setParseError(null);
-          // Only close the panel if the selected node no longer exists in
-          // the re-parsed graph (node IDs are positional and deterministic).
           const selId = selectedNodeIdRef.current;
           if (selId !== null && !n.some((node) => node.id === selId)) {
             setSelectedNodeId(null);
@@ -146,17 +118,15 @@ export default function App() {
           setParseError(msg);
         }
       } else if (message.type === 'taskCatalogReady') {
-        // Prepend built-in step types, then append the fetched ADO catalog.
         const BUILTIN_TASKS: import('./types/pipeline').CatalogTask[] = [
-          { name: 'checkout: self',       friendlyName: 'Checkout repository',   category: 'Source Control', nodeKind: 'checkout' },
-          { name: 'checkout: none',       friendlyName: 'Skip checkout',          category: 'Source Control', nodeKind: 'checkout' },
-          { name: 'script',               friendlyName: 'Script',                 category: 'Utility',        nodeKind: 'script'   },
+          { name: 'checkout: self', friendlyName: 'Checkout repository', category: 'Source Control', nodeKind: 'checkout' },
+          { name: 'checkout: none', friendlyName: 'Skip checkout',       category: 'Source Control', nodeKind: 'checkout' },
+          { name: 'script',         friendlyName: 'Script',              category: 'Utility',        nodeKind: 'script'   },
         ];
         setContextMenu((prev) =>
           prev ? { ...prev, loading: false, tasks: [...BUILTIN_TASKS, ...message.tasks] } : null
         );
       } else if (message.type === 'taskInputsReady') {
-        // Cache the schema and update the panel if this task is still selected.
         const { taskRef, inputs } = message;
         taskInputsCacheRef.current.set(taskRef, inputs);
         const selNode = nodesRef.current.find((n) => n.id === selectedNodeIdRef.current);
@@ -175,12 +145,8 @@ export default function App() {
           setTemplateParamsLoading(false);
         }
       } else if (message.type === 'templateExpansionReady') {
-        // Expand the template node inline — view-only, no YAML write-back.
         const result = expandTemplateNode(
-          message.templateNodeId,
-          message.yaml,
-          nodesRef.current,
-          edgesRef.current
+          message.templateNodeId, message.yaml, nodesRef.current, edgesRef.current
         );
         setNodes(result.nodes);
         setEdges(result.edges);
@@ -194,7 +160,6 @@ export default function App() {
         const newStack = [...navStackRef.current, entry];
         navStackRef.current = newStack;
         setNavStack(newStack);
-
         activeDocPathRef.current = message.absolutePath;
         setFileName(message.fileName);
         setSelectedNodeId(null);
@@ -216,12 +181,10 @@ export default function App() {
       }
     };
     window.addEventListener('message', handler);
-    // Signal to the extension that the webview is ready
     vscode.postMessage({ type: 'ready' });
     return () => window.removeEventListener('message', handler);
   }, []);
 
-  // ── Fetch task input schema when a task node is selected ──────────────────
   useEffect(() => {
     const node = nodesRef.current.find((n) => n.id === selectedNodeId);
     if (node?.data.kind !== 'task') {
@@ -230,11 +193,7 @@ export default function App() {
       return;
     }
     const taskRef = (node.data.details?.['taskName'] as string | undefined) ?? '';
-    if (!taskRef) {
-      setTaskInputSchema(null);
-      setTaskInputsLoading(false);
-      return;
-    }
+    if (!taskRef) { setTaskInputSchema(null); setTaskInputsLoading(false); return; }
     const cached = taskInputsCacheRef.current.get(taskRef);
     if (cached) {
       setTaskInputSchema(cached);
@@ -244,9 +203,8 @@ export default function App() {
       setTaskInputsLoading(true);
       vscode.postMessage({ type: 'requestTaskInputs', taskRef });
     }
-  }, [selectedNodeId]);  // Intentionally excludes `nodes`: we only re-fetch on node selection change
+  }, [selectedNodeId]);
 
-  // ── Fetch template parameter schema when a template node is selected ──────
   useEffect(() => {
     const node = nodesRef.current.find((n) => n.id === selectedNodeId);
     if (node?.data.kind !== 'template') {
@@ -255,11 +213,7 @@ export default function App() {
       return;
     }
     const templatePath = (node.data.details?.['templatePath'] as string | undefined) ?? '';
-    if (!templatePath) {
-      setTemplateParamSchema(null);
-      setTemplateParamsLoading(false);
-      return;
-    }
+    if (!templatePath) { setTemplateParamSchema(null); setTemplateParamsLoading(false); return; }
     const cached = templateParamsCacheRef.current.get(templatePath);
     if (cached) {
       setTemplateParamSchema(cached);
@@ -271,15 +225,11 @@ export default function App() {
     }
   }, [selectedNodeId]);
 
-  // ── Push graph changes back to the YAML document ─────────────────────────
   const handleGraphChange = useCallback(
     (updatedNodes: Node<GraphNodeData>[], updatedEdges: Edge[]) => {
       try {
         const yaml = graphToPipeline(updatedNodes, updatedEdges);
         if (navStackRef.current.length > 0) {
-          // Editing a navigated template file — send with explicit filePath so
-          // the extension writes to the right file. Don't increment
-          // pendingEditCount: the extension won't echo this back via 'update'.
           vscode.postMessage({ type: 'edit', yaml, filePath: activeDocPathRef.current });
         } else {
           pendingEditCount.current += 1;
@@ -293,7 +243,6 @@ export default function App() {
     []
   );
 
-  // ── Node property edits ───────────────────────────────────────────────────
   const handleNodeDataChange = useCallback(
     (nodeId: string, data: Partial<GraphNodeData>) => {
       const updated = nodes.map((n) =>
@@ -305,9 +254,6 @@ export default function App() {
     [nodes, edges, handleGraphChange]
   );
 
-  // ── Context menu on empty canvas ───────────────────────────────────────────
-  // If there is no trigger yet: show the trigger creation menu.
-  // Otherwise: show the task catalog (existing behaviour).
   const handleContextMenu = useCallback((x: number, y: number) => {
     const hasTrigger = nodesRef.current.some((n) => n.data.kind === 'trigger');
     if (!hasTrigger) {
@@ -323,8 +269,7 @@ export default function App() {
     const anchorNodeId = jobDragSourceRef.current ?? undefined;
     jobDragSourceRef.current = null;
     const { nodes: n, edges: e } = insertTaskNode(
-      nodesRef.current,
-      edgesRef.current,
+      nodesRef.current, edgesRef.current,
       { taskName: task.name, anchorNodeId, nodeKind: task.nodeKind }
     );
     setNodes(n);
@@ -335,16 +280,13 @@ export default function App() {
   const handleTriggerSelect = useCallback((triggerType: TriggerType) => {
     setTriggerMenu(null);
     const { nodes: n, edges: e } = insertTriggerNode(
-      nodesRef.current,
-      edgesRef.current,
-      triggerType
+      nodesRef.current, edgesRef.current, triggerType
     );
     setNodes(n);
     setEdges(e);
     handleGraphChange(n, e);
   }, [handleGraphChange]);
 
-  // Called by PipelineGraph when the user drags an edge from a task node onto empty space.
   const handleTaskConnectEnd = useCallback(
     (sourceNodeId: string, clientX: number, clientY: number) => {
       jobDragSourceRef.current = sourceNodeId;
@@ -354,15 +296,10 @@ export default function App() {
     []
   );
 
-  // Called when the user double-clicks a template node — navigate into it.
-  const handleTemplateNodeDoubleClick = useCallback(
-    (templatePath: string) => {
-      vscode.postMessage({ type: 'loadTemplate', templatePath, documentPath: activeDocPathRef.current });
-    },
-    []
-  );
+  const handleTemplateNodeDoubleClick = useCallback((templatePath: string) => {
+    vscode.postMessage({ type: 'loadTemplate', templatePath, documentPath: activeDocPathRef.current });
+  }, []);
 
-  // Called when the user right-clicks a (non-expanded) template node.
   const handleTemplateNodeContextMenu = useCallback(
     (nodeId: string, templatePath: string, x: number, y: number) => {
       setTemplateContextMenu({ x, y, mode: 'expand', templateNodeId: nodeId, templatePath });
@@ -370,7 +307,6 @@ export default function App() {
     []
   );
 
-  // Called when the user right-clicks a node expanded inline from a template.
   const handleExpandedNodeContextMenu = useCallback(
     (fromTemplateId: string, templatePath: string, x: number, y: number) => {
       setTemplateContextMenu({ x, y, mode: 'collapse', templatePath, fromTemplateId });
@@ -378,8 +314,6 @@ export default function App() {
     []
   );
 
-  // Request the extension host to read the template file and send it back
-  // so we can expand it inline.
   const handleExpandTemplate = useCallback(() => {
     if (!templateContextMenu?.templateNodeId) { return; }
     vscode.postMessage({
@@ -390,42 +324,33 @@ export default function App() {
     });
   }, [templateContextMenu]);
 
-  // Collapse all nodes expanded from the given template back into the placeholder.
   const handleCollapseTemplate = useCallback(() => {
     if (!templateContextMenu?.fromTemplateId) { return; }
     const result = collapseTemplateNodes(
-      templateContextMenu.fromTemplateId,
-      nodesRef.current,
-      edgesRef.current
+      templateContextMenu.fromTemplateId, nodesRef.current, edgesRef.current
     );
     setNodes(result.nodes);
     setEdges(result.edges);
   }, [templateContextMenu]);
 
-  // Navigate back to a specific breadcrumb level.
-  // `index` is the position in navStack whose state we want to restore.
-  const handleNavigateTo = useCallback(
-    (index: number) => {
-      const entry = navStackRef.current[index];
-      if (!entry) { return; }
-      const newStack = navStackRef.current.slice(0, index);
-      navStackRef.current = newStack;
-      setNavStack(newStack);
-      activeDocPathRef.current = entry.absolutePath;
-      setFileName(entry.fileName);
-      setNodes(entry.nodes);
-      setEdges(entry.edges);
-      setSelectedNodeId(null);
-      setTaskInputSchema(null);
-      setTemplateParamSchema(null);
-      setParseError(null);
-      templateParamsCacheRef.current.clear();
-      taskInputsCacheRef.current.clear();
-    },
-    []
-  );
+  const handleNavigateTo = useCallback((index: number) => {
+    const entry = navStackRef.current[index];
+    if (!entry) { return; }
+    const newStack = navStackRef.current.slice(0, index);
+    navStackRef.current = newStack;
+    setNavStack(newStack);
+    activeDocPathRef.current = entry.absolutePath;
+    setFileName(entry.fileName);
+    setNodes(entry.nodes);
+    setEdges(entry.edges);
+    setSelectedNodeId(null);
+    setTaskInputSchema(null);
+    setTemplateParamSchema(null);
+    setParseError(null);
+    templateParamsCacheRef.current.clear();
+    taskInputsCacheRef.current.clear();
+  }, []);
 
-  // Called by PipelineGraph when the user drags an edge from a stage or job onto empty space.
   const handleEdgeDropEnd = useCallback(
     (sourceNodeId: string, sourceKind: 'stage' | 'job', clientX: number, clientY: number, flowX: number, flowY: number) => {
       const sourceNode = nodesRef.current.find((n) => n.id === sourceNodeId);
@@ -443,7 +368,6 @@ export default function App() {
       const position = { x: flowX, y: flowY };
 
       if (choice === 'task') {
-        // Open the task catalog; the selected task will be wired to the source job.
         jobDragSourceRef.current = sourceNodeId;
         setContextMenu({ x: edgeDropMenu.x, y: edgeDropMenu.y, loading: true, tasks: [] });
         vscode.postMessage({ type: 'requestTaskCatalog' });
@@ -453,74 +377,97 @@ export default function App() {
       if (choice === 'job') {
         const newId = `job-${Date.now()}`;
         const newNode = {
-          id: newId,
-          type: 'job' as const,
-          position,
+          id: newId, type: 'job' as const, position,
           data: {
             kind: 'job' as const,
-            label: 'New Job',
-            rawId: 'NewJob',
-            // When dragging from a job, the new job depends on that job
+            label: 'New Job', rawId: 'NewJob',
             ...(sourceKind === 'job' ? { dependsOn: [sourceLabel] } : {}),
           },
         };
         const newEdge = {
-          id: `e-${sourceNodeId}-${newId}`,
-          source: sourceNodeId,
-          target: newId,
-          animated: true,
-          style: { stroke: '#0078d4', strokeWidth: 2 },
+          id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId,
+          animated: true, style: { stroke: '#0078d4', strokeWidth: 2 },
         };
         const n = [...nodesRef.current, newNode];
         const e = [...edgesRef.current, newEdge];
-        setNodes(n);
-        setEdges(e);
-        handleGraphChange(n, e);
+        setNodes(n); setEdges(e); handleGraphChange(n, e);
       } else {
-        // choice === 'stage': new stage that depends on the source stage
         const newId = `stage-${Date.now()}`;
         const newNode = {
-          id: newId,
-          type: 'stage' as const,
-          position,
-          data: {
-            kind: 'stage' as const,
-            label: 'New Stage',
-            rawId: 'NewStage',
-            dependsOn: [sourceLabel],
-          },
+          id: newId, type: 'stage' as const, position,
+          data: { kind: 'stage' as const, label: 'New Stage', rawId: 'NewStage', dependsOn: [sourceLabel] },
         };
         const newEdge = {
-          id: `e-${sourceNodeId}-${newId}`,
-          source: sourceNodeId,
-          target: newId,
-          animated: true,
-          style: { stroke: '#0078d4', strokeWidth: 2 },
+          id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId,
+          animated: true, style: { stroke: '#0078d4', strokeWidth: 2 },
         };
         const n = [...nodesRef.current, newNode];
         const e = [...edgesRef.current, newEdge];
-        setNodes(n);
-        setEdges(e);
-        handleGraphChange(n, e);
+        setNodes(n); setEdges(e); handleGraphChange(n, e);
       }
     },
     [edgeDropMenu, handleGraphChange]
   );
 
-  // Derive the currently selected node from live `nodes` state so the
-  // PropertiesPanel never reads stale data after an edit
+  // ── Palette: add a new node from the left panel ───────────────────────────
+  const handleAddNodeFromPalette = useCallback((kind: GraphNodeKind) => {
+    const newId = `${kind}-${Date.now()}`;
+    const kindDefaults: Record<GraphNodeKind, { label: string; rawId: string; details?: Record<string, unknown> }> = {
+      trigger:  { label: 'CI Trigger',        rawId: 'Trigger',  details: { triggerType: 'ci', branches: ['main'] } },
+      stage:    { label: 'New Stage',         rawId: 'NewStage'  },
+      job:      { label: 'New Job',           rawId: 'NewJob',   details: { pool: 'ubuntu-latest' } },
+      task:     { label: 'New Task',          rawId: 'NewTask',  details: { taskName: 'Task@0' } },
+      script:   { label: 'New Script',        rawId: 'NewScript' },
+      checkout: { label: 'Checkout',          rawId: 'checkout', details: { repository: 'self' } },
+      publish:  { label: 'Publish Artifact',  rawId: 'Publish',  details: { artifact: 'drop' } },
+      download: { label: 'Download Artifact', rawId: 'Download', details: { artifact: 'drop' } },
+      template: { label: 'template.yml',      rawId: 'template', details: { templatePath: './templates/template.yml' } },
+    };
+    const kd = kindDefaults[kind];
+    const existing = nodesRef.current;
+    const baseY = existing.length > 0 ? Math.max(...existing.map((n) => n.position.y)) + 150 : 200;
+    const baseX = existing.length > 0 ? existing[existing.length - 1].position.x + Math.random() * 60 - 30 : 400;
+
+    const newNode: Node<GraphNodeData> = {
+      id: newId,
+      type: kind,
+      position: { x: baseX, y: baseY },
+      data: {
+        kind,
+        label: kd.label,
+        rawId: kd.rawId,
+        details: kd.details,
+      },
+    };
+    const n = [...nodesRef.current, newNode];
+    setNodes(n);
+    setSelectedNodeId(newId);
+    showToast(`Added ${kind} node`);
+  }, [showToast]);
+
   const selectedNode = selectedNodeId != null
     ? (nodes.find((n) => n.id === selectedNodeId) ?? null)
     : null;
 
+  // ── YAML for export modal ──────────────────────────────────────────────────
+  const exportYaml = showYaml ? (() => {
+    try { return graphToPipeline(nodes, edges); } catch { return '# Error generating YAML'; }
+  })() : '';
+
   return (
     <div className="app-container">
-      <header className="app-header">
-        <span className="app-title">
-          <span className="app-icon">⬡</span> Azure Blueprints
-        </span>
 
-        {/* Breadcrumb trail — shown when navigated into template(s) */}
+      {/* ── Header ── */}
+      <header className="app-header">
+        {window.__extIconUri
+          ? <img src={window.__extIconUri} alt="" className="app-header__icon-img" />
+          : <span className="app-icon">⬡</span>
+        }
+
+        <span className="app-title">Azure Blueprints</span>
+        <span className="app-header__sep" />
+
+        {/* Breadcrumb or filename */}
         {navStack.length > 0 ? (
           <nav className="app-breadcrumb" aria-label="Navigation">
             {navStack.map((entry, i) => (
@@ -543,74 +490,86 @@ export default function App() {
           fileName && <span className="app-filename">{fileName}</span>
         )}
 
-        {parseError && (
-          <span className="app-error" title={parseError}>
-            ⚠ Parse error
-          </span>
-        )}
+        {/* Centre hint */}
+        <div className="app-header__hint">
+          Space+drag to pan · Scroll to zoom · Right-click canvas to add · Delete to remove
+        </div>
+
+        {/* Right actions */}
+        <div className="app-header__actions">
+          {parseError && (
+            <span className="app-error" title={parseError}>⚠ Parse error</span>
+          )}
+          <button
+            className="app-header__tweaks-btn"
+            onClick={() => setShowTweaks((v) => !v)}
+            title="Graph settings"
+          >
+            ⚙
+          </button>
+          <button
+            className="app-header__save-btn"
+            onClick={() => setShowYaml(true)}
+          >
+            ⬇ Save YAML
+          </button>
+        </div>
       </header>
 
+      {/* ── Body ── */}
       <div className="app-body">
+        <PalettePanel onAddNode={handleAddNodeFromPalette} />
+
         <ReactFlowProvider>
-        <PipelineGraph
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={setNodes}
-          onEdgesChange={setEdges}
-          onGraphChange={handleGraphChange}
-          onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
-          onPaneContextMenu={handleContextMenu}
-          onTaskConnectEnd={handleTaskConnectEnd}
-          onEdgeDropEnd={handleEdgeDropEnd}
-          onTemplateNodeDoubleClick={handleTemplateNodeDoubleClick}
-          onTemplateNodeContextMenu={handleTemplateNodeContextMenu}
-          onExpandedNodeContextMenu={handleExpandedNodeContextMenu}
-        />
+          <PipelineGraph
+            nodes={nodes}
+            edges={edges}
+            tweaks={tweaks}
+            onNodesChange={setNodes}
+            onEdgesChange={setEdges}
+            onGraphChange={handleGraphChange}
+            onNodeSelect={(node) => setSelectedNodeId(node?.id ?? null)}
+            onPaneContextMenu={handleContextMenu}
+            onTaskConnectEnd={handleTaskConnectEnd}
+            onEdgeDropEnd={handleEdgeDropEnd}
+            onTemplateNodeDoubleClick={handleTemplateNodeDoubleClick}
+            onTemplateNodeContextMenu={handleTemplateNodeContextMenu}
+            onExpandedNodeContextMenu={handleExpandedNodeContextMenu}
+          />
         </ReactFlowProvider>
 
         {contextMenu && (
           <ContextTaskMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            loading={contextMenu.loading}
-            tasks={contextMenu.tasks}
+            x={contextMenu.x} y={contextMenu.y}
+            loading={contextMenu.loading} tasks={contextMenu.tasks}
             onSelect={handleTaskSelect}
             onClose={() => { jobDragSourceRef.current = null; setContextMenu(null); }}
           />
         )}
-
         {edgeDropMenu && (
           <ContextEdgeMenu
-            x={edgeDropMenu.x}
-            y={edgeDropMenu.y}
-            sourceLabel={edgeDropMenu.sourceLabel}
-            sourceKind={edgeDropMenu.sourceKind}
+            x={edgeDropMenu.x} y={edgeDropMenu.y}
+            sourceLabel={edgeDropMenu.sourceLabel} sourceKind={edgeDropMenu.sourceKind}
             onSelect={handleEdgeDropSelect}
             onClose={() => setEdgeDropMenu(null)}
           />
         )}
-
         {triggerMenu && (
           <ContextTriggerMenu
-            x={triggerMenu.x}
-            y={triggerMenu.y}
+            x={triggerMenu.x} y={triggerMenu.y}
             onSelect={handleTriggerSelect}
             onClose={() => setTriggerMenu(null)}
           />
         )}
-
         {templateContextMenu && (
           <ContextTemplateMenu
-            x={templateContextMenu.x}
-            y={templateContextMenu.y}
-            mode={templateContextMenu.mode}
-            templatePath={templateContextMenu.templatePath}
+            x={templateContextMenu.x} y={templateContextMenu.y}
+            mode={templateContextMenu.mode} templatePath={templateContextMenu.templatePath}
             onExpand={handleExpandTemplate}
             onCollapse={handleCollapseTemplate}
             onClose={() => setTemplateContextMenu(null)}
           />
         )}
-
         {selectedNode && (
           <PropertiesPanel
             node={selectedNode}
@@ -623,6 +582,44 @@ export default function App() {
           />
         )}
       </div>
+
+      {/* ── YAML Export Modal ── */}
+      {showYaml && (
+        <YamlModal
+          yaml={exportYaml}
+          fileName={fileName || 'azure-pipeline.yml'}
+          onClose={() => setShowYaml(false)}
+        />
+      )}
+
+      {/* ── Tweaks Panel ── */}
+      {showTweaks && (
+        <div className="tweaks-panel">
+          <div className="tweaks-panel__title">Graph Settings</div>
+          {([
+            { key: 'edgeAnimation' as const, label: 'Animated edges' },
+            { key: 'showMinimap'   as const, label: 'Show minimap'   },
+            { key: 'showGrid'      as const, label: 'Show dot grid'  },
+          ] as { key: keyof GraphTweaks; label: string }[]).map((row) => (
+            <div key={row.key} className="tweaks-panel__row">
+              <span className="tweaks-panel__label">{row.label}</span>
+              <div
+                className={`tweaks-toggle${tweaks[row.key] ? ' tweaks-toggle--on' : ''}`}
+                onClick={() => setTweaks((t) => ({ ...t, [row.key]: !t[row.key] }))}
+              >
+                <div className="tweaks-toggle__thumb" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div className="app-toast">
+          <span className="app-toast__icon">◈</span> {toast}
+        </div>
+      )}
     </div>
   );
 }
